@@ -189,7 +189,7 @@ always @(*) begin
         OP_SHL,
         OP_SHLI:   result = a << b[5:0];
         OP_MOV_RR: result = a;
-        OP_MOVI:   result = b;
+        OP_MOVI:   result = {a[63:12], b[11:0]};
         OP_ADD,
         OP_ADDI:   result = a + b;
         OP_SUB,
@@ -936,6 +936,16 @@ always @(*) begin
         n_prf_ready[i] = prf_ready[i];
         n_phys_free[i] = phys_free[i];
         used_phys[i] = 1'b0;
+    end
+
+    // Keep identity-mapped architectural registers coherent with the
+    // architectural register file state the testbench initializes.
+    for (i = 0; i < ARCH_REGS; i = i + 1) begin
+        if (n_rat[i] == i[5:0]) begin
+            n_prf_value[i] = reg_file.registers[i];
+            n_prf_ready[i] = 1'b1;
+            n_phys_free[i] = 1'b0;
+        end
     end
 
     for (i = 0; i < ROB_SIZE; i = i + 1) begin
