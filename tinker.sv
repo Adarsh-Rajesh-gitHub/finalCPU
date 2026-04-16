@@ -1,8 +1,302 @@
-`include "instruction_decoder.sv"
-`include "register_file.sv"
-`include "alu.sv"
-`include "fpu.sv"
-`include "memory.sv"
+module instruction_decoder(
+    input [31:0] instruction,
+    output [4:0] opcode,
+    output [4:0] rd,
+    output [4:0] rs,
+    output [4:0] rt,
+    output [11:0] L,
+    output reg use_alu,
+    output reg use_fpu,
+    output reg is_literal,
+    output reg br_abs,
+    output reg br_rel_reg,
+    output reg br_rel_lit,
+    output reg br_nz,
+    output reg br_gt,
+    output reg call_inst,
+    output reg return_inst,
+    output reg [4:0] alu_op,
+    output reg [4:0] fpu_op,
+    output reg reg_write
+);
+
+localparam [4:0] OP_AND      = 5'h00;
+localparam [4:0] OP_OR       = 5'h01;
+localparam [4:0] OP_XOR      = 5'h02;
+localparam [4:0] OP_NOT      = 5'h03;
+localparam [4:0] OP_SHR      = 5'h04;
+localparam [4:0] OP_SHRI     = 5'h05;
+localparam [4:0] OP_SHL      = 5'h06;
+localparam [4:0] OP_SHLI     = 5'h07;
+localparam [4:0] OP_BR_ABS   = 5'h08;
+localparam [4:0] OP_BR_RREG  = 5'h09;
+localparam [4:0] OP_BR_RLIT  = 5'h0A;
+localparam [4:0] OP_BR_NZ    = 5'h0B;
+localparam [4:0] OP_CALL     = 5'h0C;
+localparam [4:0] OP_RET      = 5'h0D;
+localparam [4:0] OP_BR_GT    = 5'h0E;
+localparam [4:0] OP_HALT     = 5'h0F;
+localparam [4:0] OP_LOAD     = 5'h10;
+localparam [4:0] OP_MOV_RR   = 5'h11;
+localparam [4:0] OP_MOVI     = 5'h12;
+localparam [4:0] OP_STORE    = 5'h13;
+localparam [4:0] OP_ADDF     = 5'h14;
+localparam [4:0] OP_SUBF     = 5'h15;
+localparam [4:0] OP_MULF     = 5'h16;
+localparam [4:0] OP_DIVF     = 5'h17;
+localparam [4:0] OP_ADD      = 5'h18;
+localparam [4:0] OP_ADDI     = 5'h19;
+localparam [4:0] OP_SUB      = 5'h1A;
+localparam [4:0] OP_SUBI     = 5'h1B;
+localparam [4:0] OP_MUL      = 5'h1C;
+localparam [4:0] OP_DIV      = 5'h1D;
+
+assign opcode = instruction[31:27];
+assign rd = instruction[26:22];
+assign rs = instruction[21:17];
+assign rt = instruction[16:12];
+assign L = instruction[11:0];
+
+always @(*) begin
+    use_alu = 1'b0;
+    use_fpu = 1'b0;
+    is_literal = 1'b0;
+    br_abs = 1'b0;
+    br_rel_reg = 1'b0;
+    br_rel_lit = 1'b0;
+    br_nz = 1'b0;
+    br_gt = 1'b0;
+    call_inst = 1'b0;
+    return_inst = 1'b0;
+    alu_op = opcode;
+    fpu_op = opcode;
+    reg_write = 1'b0;
+
+    case (opcode)
+        OP_AND, OP_OR, OP_XOR, OP_NOT, OP_SHR, OP_SHRI, OP_SHL, OP_SHLI,
+        OP_MOV_RR, OP_MOVI, OP_ADD, OP_ADDI, OP_SUB, OP_SUBI, OP_MUL, OP_DIV: begin
+            use_alu = 1'b1;
+            reg_write = 1'b1;
+            if ((opcode == OP_MOVI) || (opcode == OP_ADDI) || (opcode == OP_SUBI) ||
+                (opcode == OP_SHRI) || (opcode == OP_SHLI))
+                is_literal = 1'b1;
+        end
+        OP_ADDF, OP_SUBF, OP_MULF, OP_DIVF: begin
+            use_fpu = 1'b1;
+            reg_write = 1'b1;
+        end
+        OP_BR_ABS: begin
+            br_abs = 1'b1;
+        end
+        OP_BR_RREG: begin
+            br_rel_reg = 1'b1;
+        end
+        OP_BR_RLIT: begin
+            br_rel_lit = 1'b1;
+            is_literal = 1'b1;
+        end
+        OP_BR_NZ: begin
+            br_nz = 1'b1;
+        end
+        OP_BR_GT: begin
+            br_gt = 1'b1;
+        end
+        OP_CALL: begin
+            call_inst = 1'b1;
+        end
+        OP_RET: begin
+            return_inst = 1'b1;
+        end
+        OP_LOAD: begin
+            reg_write = 1'b1;
+        end
+        default: begin
+        end
+    endcase
+end
+
+endmodule
+
+module register_file(
+    input clk,
+    input reset,
+    input [4:0] rd,
+    input [4:0] rs,
+    input [4:0] rt,
+    input [63:0] write_data,
+    input reg_write,
+    output [63:0] rd_data,
+    output [63:0] rs_data,
+    output [63:0] rt_data,
+    output [63:0] r31_data
+);
+
+reg [63:0] registers [0:31];
+integer i;
+
+assign rd_data = registers[rd];
+assign rs_data = registers[rs];
+assign rt_data = registers[rt];
+assign r31_data = registers[31];
+
+always @(posedge clk or posedge reset) begin
+    if (reset) begin
+        for (i = 0; i < 32; i = i + 1)
+            registers[i] <= 64'd0;
+        registers[31] <= 64'd524288;
+    end
+    else if (reg_write) begin
+        registers[rd] <= write_data;
+    end
+end
+
+endmodule
+
+module alu(
+    input [4:0] alu_op,
+    input [63:0] a,
+    input [63:0] b,
+    output reg [63:0] result
+);
+
+localparam [4:0] OP_AND    = 5'h00;
+localparam [4:0] OP_OR     = 5'h01;
+localparam [4:0] OP_XOR    = 5'h02;
+localparam [4:0] OP_NOT    = 5'h03;
+localparam [4:0] OP_SHR    = 5'h04;
+localparam [4:0] OP_SHRI   = 5'h05;
+localparam [4:0] OP_SHL    = 5'h06;
+localparam [4:0] OP_SHLI   = 5'h07;
+localparam [4:0] OP_MOV_RR = 5'h11;
+localparam [4:0] OP_MOVI   = 5'h12;
+localparam [4:0] OP_ADD    = 5'h18;
+localparam [4:0] OP_ADDI   = 5'h19;
+localparam [4:0] OP_SUB    = 5'h1A;
+localparam [4:0] OP_SUBI   = 5'h1B;
+localparam [4:0] OP_MUL    = 5'h1C;
+localparam [4:0] OP_DIV    = 5'h1D;
+
+always @(*) begin
+    case (alu_op)
+        OP_AND:    result = a & b;
+        OP_OR:     result = a | b;
+        OP_XOR:    result = a ^ b;
+        OP_NOT:    result = ~a;
+        OP_SHR,
+        OP_SHRI:   result = a >> b[5:0];
+        OP_SHL,
+        OP_SHLI:   result = a << b[5:0];
+        OP_MOV_RR: result = a;
+        OP_MOVI:   result = b;
+        OP_ADD,
+        OP_ADDI:   result = a + b;
+        OP_SUB,
+        OP_SUBI:   result = a - b;
+        OP_MUL:    result = a * b;
+        OP_DIV:    result = (b == 64'd0) ? 64'd0 : (a / b);
+        default:   result = 64'd0;
+    endcase
+end
+
+endmodule
+
+module fpu(
+    input [63:0] a,
+    input [63:0] b,
+    input [4:0] fpu_op,
+    output reg [63:0] result
+);
+
+localparam [4:0] OP_ADDF = 5'h14;
+localparam [4:0] OP_SUBF = 5'h15;
+localparam [4:0] OP_MULF = 5'h16;
+localparam [4:0] OP_DIVF = 5'h17;
+
+real ra;
+real rb;
+real rr;
+
+always @(*) begin
+    ra = $bitstoreal(a);
+    rb = $bitstoreal(b);
+    rr = 0.0;
+
+    case (fpu_op)
+        OP_ADDF: rr = ra + rb;
+        OP_SUBF: rr = ra - rb;
+        OP_MULF: rr = ra * rb;
+        OP_DIVF: begin
+            if (rb == 0.0)
+                rr = 0.0;
+            else
+                rr = ra / rb;
+        end
+        default: rr = 0.0;
+    endcase
+
+    result = $realtobits(rr);
+end
+
+endmodule
+
+module memory(
+    input clk,
+    input reset,
+    input [63:0] pc,
+    output [31:0] instruction,
+    input [63:0] data_addr,
+    input [63:0] write_data,
+    input mem_write,
+    output [63:0] data_read
+);
+
+localparam MEM_WORDS = 262144;
+
+reg [31:0] memory [0:MEM_WORDS-1];
+integer i;
+
+wire [63:0] pc_index;
+wire [63:0] data_index;
+
+assign pc_index = pc >> 2;
+assign data_index = data_addr >> 2;
+
+assign instruction = (pc_index < MEM_WORDS) ? memory[pc_index] : 32'd0;
+assign data_read = (data_index + 1 < MEM_WORDS) ? {memory[data_index + 1], memory[data_index]} : 64'd0;
+
+task write_word;
+    input [63:0] addr;
+    input [31:0] value;
+    begin
+        if ((addr >> 2) < MEM_WORDS)
+            memory[addr >> 2] = value;
+    end
+endtask
+
+task write_doubleword;
+    input [63:0] addr;
+    input [63:0] value;
+    begin
+        if (((addr >> 2) + 1) < MEM_WORDS) begin
+            memory[addr >> 2] = value[31:0];
+            memory[(addr >> 2) + 1] = value[63:32];
+        end
+    end
+endtask
+
+initial begin
+    for (i = 0; i < MEM_WORDS; i = i + 1)
+        memory[i] = 32'd0;
+end
+
+always @(posedge clk) begin
+    if (!reset && mem_write && (data_index + 1 < MEM_WORDS)) begin
+        memory[data_index] <= write_data[31:0];
+        memory[data_index + 1] <= write_data[63:32];
+    end
+end
+
+endmodule
 
 module tinker_core(
     input clk,
