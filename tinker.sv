@@ -131,6 +131,8 @@ module register_file(
     output [63:0] r31_data
 );
 
+localparam [63:0] MEM_SIZE = 64'd524288;
+
 reg [63:0] registers [0:31];
 integer i;
 
@@ -143,7 +145,7 @@ always @(posedge clk or posedge reset) begin
     if (reset) begin
         for (i = 0; i < 32; i = i + 1)
             registers[i] <= 64'd0;
-        registers[31] <= 64'd524288;
+        registers[31] <= MEM_SIZE;
     end
     else if (reg_write) begin
         registers[rd] <= write_data;
@@ -250,26 +252,30 @@ module memory(
     output [63:0] data_read
 );
 
-localparam MEM_WORDS = 262144;
+localparam MEM_SIZE = 524288;
 
-reg [31:0] memory [0:MEM_WORDS-1];
+reg [7:0] bytes [0:MEM_SIZE-1];
 integer i;
 
-wire [63:0] pc_index;
-wire [63:0] data_index;
+assign instruction = ((pc + 64'd3) < MEM_SIZE) ?
+    {bytes[pc + 64'd3], bytes[pc + 64'd2], bytes[pc + 64'd1], bytes[pc]} :
+    32'd0;
 
-assign pc_index = pc >> 2;
-assign data_index = data_addr >> 2;
-
-assign instruction = (pc_index < MEM_WORDS) ? memory[pc_index] : 32'd0;
-assign data_read = (data_index + 1 < MEM_WORDS) ? {memory[data_index + 1], memory[data_index]} : 64'd0;
+assign data_read = ((data_addr + 64'd7) < MEM_SIZE) ?
+    {bytes[data_addr + 64'd7], bytes[data_addr + 64'd6], bytes[data_addr + 64'd5], bytes[data_addr + 64'd4],
+     bytes[data_addr + 64'd3], bytes[data_addr + 64'd2], bytes[data_addr + 64'd1], bytes[data_addr]} :
+    64'd0;
 
 task write_word;
     input [63:0] addr;
     input [31:0] value;
     begin
-        if ((addr >> 2) < MEM_WORDS)
-            memory[addr >> 2] = value;
+        if ((addr + 64'd3) < MEM_SIZE) begin
+            bytes[addr] = value[7:0];
+            bytes[addr + 64'd1] = value[15:8];
+            bytes[addr + 64'd2] = value[23:16];
+            bytes[addr + 64'd3] = value[31:24];
+        end
     end
 endtask
 
@@ -277,22 +283,34 @@ task write_doubleword;
     input [63:0] addr;
     input [63:0] value;
     begin
-        if (((addr >> 2) + 1) < MEM_WORDS) begin
-            memory[addr >> 2] = value[31:0];
-            memory[(addr >> 2) + 1] = value[63:32];
+        if ((addr + 64'd7) < MEM_SIZE) begin
+            bytes[addr] = value[7:0];
+            bytes[addr + 64'd1] = value[15:8];
+            bytes[addr + 64'd2] = value[23:16];
+            bytes[addr + 64'd3] = value[31:24];
+            bytes[addr + 64'd4] = value[39:32];
+            bytes[addr + 64'd5] = value[47:40];
+            bytes[addr + 64'd6] = value[55:48];
+            bytes[addr + 64'd7] = value[63:56];
         end
     end
 endtask
 
 initial begin
-    for (i = 0; i < MEM_WORDS; i = i + 1)
-        memory[i] = 32'd0;
+    for (i = 0; i < MEM_SIZE; i = i + 1)
+        bytes[i] = 8'd0;
 end
 
 always @(posedge clk) begin
-    if (!reset && mem_write && (data_index + 1 < MEM_WORDS)) begin
-        memory[data_index] <= write_data[31:0];
-        memory[data_index + 1] <= write_data[63:32];
+    if (!reset && mem_write && ((data_addr + 64'd7) < MEM_SIZE)) begin
+        bytes[data_addr] <= write_data[7:0];
+        bytes[data_addr + 64'd1] <= write_data[15:8];
+        bytes[data_addr + 64'd2] <= write_data[23:16];
+        bytes[data_addr + 64'd3] <= write_data[31:24];
+        bytes[data_addr + 64'd4] <= write_data[39:32];
+        bytes[data_addr + 64'd5] <= write_data[47:40];
+        bytes[data_addr + 64'd6] <= write_data[55:48];
+        bytes[data_addr + 64'd7] <= write_data[63:56];
     end
 end
 
@@ -309,6 +327,7 @@ localparam INT_RS_SIZE = 8;
 localparam FP_RS_SIZE  = 8;
 localparam LSQ_SIZE    = 8;
 localparam FQ_SIZE     = 4;
+localparam [63:0] MEM_SIZE = 64'd524288;
 localparam PHYS_SIZE   = 64;
 localparam ARCH_REGS   = 32;
 localparam BTB_SIZE    = 8;
@@ -2498,7 +2517,7 @@ always @(posedge clk or posedge reset) begin
             else
                 phys_free[i] <= 1'b1;
         end
-        prf_value[31] <= 64'd524288;
+        prf_value[31] <= MEM_SIZE;
 
         for (i = 0; i < ROB_SIZE; i = i + 1) begin
             rob_valid[i] <= 1'b0;
