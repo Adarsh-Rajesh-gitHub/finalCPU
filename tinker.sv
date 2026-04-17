@@ -1652,126 +1652,6 @@ always @(*) begin
 
     if (!hlt) begin
         // ------------------------------------------------------------
-        // 1) in-order commit (up to dual-width; at most one memory write)
-        // ------------------------------------------------------------
-        begin : commit_block
-            reg commit_stop;
-            reg commit_allow_second;
-            reg [3:0] commit_idx;
-            reg [5:0] commit_phys;
-            reg [5:0] commit_old_phys;
-
-            commit_stop = 1'b0;
-            commit_allow_second = 1'b0;
-            commit_idx = n_rob_head;
-            commit_phys = 6'd0;
-            commit_old_phys = 6'd0;
-
-            if ((n_rob_count != 0) && n_rob_valid[commit_idx]) begin
-                if (n_rob_halt[commit_idx] && n_rob_done[commit_idx]) begin
-                    n_hlt = 1'b1;
-                    n_rob_valid[commit_idx] = 1'b0;
-                    n_rob_done[commit_idx] = 1'b0;
-                    n_rob_halt[commit_idx] = 1'b0;
-                    n_rob_has_dest[commit_idx] = 1'b0;
-                    n_rob_has_lsq[commit_idx] = 1'b0;
-                    n_rob_head = rob_inc(commit_idx);
-                    n_rob_count = n_rob_count - 5'd1;
-                    commit_stop = 1'b1;
-                    commit_idx = n_rob_head;
-                end
-                else if ((n_rob_opcode[commit_idx] == OP_STORE) && n_rob_has_lsq[commit_idx] &&
-                         n_lsq_valid[n_rob_lsq_idx[commit_idx]] && n_lsq_addr_ready[n_rob_lsq_idx[commit_idx]] &&
-                         n_lsq_data_ready[n_rob_lsq_idx[commit_idx]]) begin
-                    mem_write_en = 1'b1;
-                    mem_data_addr = n_lsq_addr[n_rob_lsq_idx[commit_idx]];
-                    mem_write_data = n_lsq_data_value[n_rob_lsq_idx[commit_idx]];
-                    n_lsq_valid[n_rob_lsq_idx[commit_idx]] = 1'b0;
-                    n_rob_valid[commit_idx] = 1'b0;
-                    n_rob_done[commit_idx] = 1'b0;
-                    n_rob_has_lsq[commit_idx] = 1'b0;
-                    n_rob_head = rob_inc(commit_idx);
-                    n_rob_count = n_rob_count - 5'd1;
-                    commit_stop = 1'b1;
-                    commit_idx = n_rob_head;
-                end
-                else if ((n_rob_opcode[commit_idx] == OP_CALL) && n_rob_done[commit_idx] &&
-                         n_rob_has_lsq[commit_idx] && n_lsq_valid[n_rob_lsq_idx[commit_idx]] &&
-                         n_lsq_addr_ready[n_rob_lsq_idx[commit_idx]] && n_lsq_data_ready[n_rob_lsq_idx[commit_idx]]) begin
-                    mem_write_en = 1'b1;
-                    mem_data_addr = n_lsq_addr[n_rob_lsq_idx[commit_idx]];
-                    mem_write_data = n_lsq_data_value[n_rob_lsq_idx[commit_idx]];
-                    n_lsq_valid[n_rob_lsq_idx[commit_idx]] = 1'b0;
-                    n_rob_valid[commit_idx] = 1'b0;
-                    n_rob_done[commit_idx] = 1'b0;
-                    n_rob_has_lsq[commit_idx] = 1'b0;
-                    n_rob_head = rob_inc(commit_idx);
-                    n_rob_count = n_rob_count - 5'd1;
-                    commit_stop = 1'b1;
-                    commit_idx = n_rob_head;
-                end
-                else if (n_rob_done[commit_idx]) begin
-                    if (n_rob_has_dest[commit_idx]) begin
-                        commit_phys = n_rob_new_phys[commit_idx];
-                        commit_old_phys = n_rob_old_phys[commit_idx];
-                        arf_commit0_write = 1'b1;
-                        arf_commit0_rd = n_rob_arch_dst[commit_idx];
-                        arf_commit0_data = n_prf_value[commit_phys];
-                        if (commit_old_phys >= ARCH_REGS)
-                            n_phys_free[commit_old_phys] = 1'b1;
-                    end
-                    if (n_rob_has_lsq[commit_idx]) begin
-                        n_lsq_valid[n_rob_lsq_idx[commit_idx]] = 1'b0;
-                    end
-                    n_rob_valid[commit_idx] = 1'b0;
-                    n_rob_done[commit_idx] = 1'b0;
-                    n_rob_halt[commit_idx] = 1'b0;
-                    n_rob_has_dest[commit_idx] = 1'b0;
-                    n_rob_has_lsq[commit_idx] = 1'b0;
-                    n_rob_head = rob_inc(commit_idx);
-                    n_rob_count = n_rob_count - 5'd1;
-                    commit_allow_second = 1'b1;
-                    commit_idx = n_rob_head;
-                end
-            end
-
-            if (commit_allow_second && !commit_stop && (n_rob_count != 0) && n_rob_valid[commit_idx]) begin
-                if (n_rob_halt[commit_idx] && n_rob_done[commit_idx]) begin
-                    n_hlt = 1'b1;
-                    n_rob_valid[commit_idx] = 1'b0;
-                    n_rob_done[commit_idx] = 1'b0;
-                    n_rob_halt[commit_idx] = 1'b0;
-                    n_rob_has_dest[commit_idx] = 1'b0;
-                    n_rob_has_lsq[commit_idx] = 1'b0;
-                    n_rob_head = rob_inc(commit_idx);
-                    n_rob_count = n_rob_count - 5'd1;
-                end
-                else if ((n_rob_opcode[commit_idx] != OP_STORE) && (n_rob_opcode[commit_idx] != OP_CALL) &&
-                         n_rob_done[commit_idx]) begin
-                    if (n_rob_has_dest[commit_idx]) begin
-                        commit_phys = n_rob_new_phys[commit_idx];
-                        commit_old_phys = n_rob_old_phys[commit_idx];
-                        arf_commit1_write = 1'b1;
-                        arf_commit1_rd = n_rob_arch_dst[commit_idx];
-                        arf_commit1_data = n_prf_value[commit_phys];
-                        if (commit_old_phys >= ARCH_REGS)
-                            n_phys_free[commit_old_phys] = 1'b1;
-                    end
-                    if (n_rob_has_lsq[commit_idx]) begin
-                        n_lsq_valid[n_rob_lsq_idx[commit_idx]] = 1'b0;
-                    end
-                    n_rob_valid[commit_idx] = 1'b0;
-                    n_rob_done[commit_idx] = 1'b0;
-                    n_rob_halt[commit_idx] = 1'b0;
-                    n_rob_has_dest[commit_idx] = 1'b0;
-                    n_rob_has_lsq[commit_idx] = 1'b0;
-                    n_rob_head = rob_inc(commit_idx);
-                    n_rob_count = n_rob_count - 5'd1;
-                end
-            end
-        end
-
-        // ------------------------------------------------------------
         // 2) collect execution completions into CDB / branch result slots
         // ------------------------------------------------------------
         if (alu0_valid) begin
@@ -2031,11 +1911,10 @@ always @(*) begin
                 n_rob_branch_taken[brcand_rob[i]] = brcand_taken[i];
                 n_rob_branch_target[brcand_rob[i]] = brcand_target[i];
                 if (is_cond_branch(brcand_opcode[i])) begin
-                    n_btb_valid[btb_index(brcand_pc[i])] = 1'b1;
-                    n_btb_tag[btb_index(brcand_pc[i])] = brcand_pc[i];
-                    if (brcand_taken[i])
-                        n_btb_target[btb_index(brcand_pc[i])] = brcand_target[i];
                     if (brcand_taken[i]) begin
+                        n_btb_valid[btb_index(brcand_pc[i])] = 1'b1;
+                        n_btb_tag[btb_index(brcand_pc[i])] = brcand_pc[i];
+                        n_btb_target[btb_index(brcand_pc[i])] = brcand_target[i];
                         if (n_bht[btb_index(brcand_pc[i])] != 2'b11)
                             n_bht[btb_index(brcand_pc[i])] = n_bht[btb_index(brcand_pc[i])] + 2'b01;
                     end
@@ -2142,7 +2021,128 @@ always @(*) begin
 
             n_fetch_pc = mispredict_target;
         end
-        else if (!n_hlt) begin : sched_block
+        else begin
+            // ------------------------------------------------------------
+            // 1) in-order commit (up to dual-width; at most one memory write)
+            // ------------------------------------------------------------
+            begin : commit_block
+                reg commit_stop;
+                reg commit_allow_second;
+                reg [3:0] commit_idx;
+                reg [5:0] commit_phys;
+                reg [5:0] commit_old_phys;
+
+                commit_stop = 1'b0;
+                commit_allow_second = 1'b0;
+                commit_idx = n_rob_head;
+                commit_phys = 6'd0;
+                commit_old_phys = 6'd0;
+
+                if ((n_rob_count != 0) && n_rob_valid[commit_idx]) begin
+                    if (n_rob_halt[commit_idx] && n_rob_done[commit_idx]) begin
+                        n_hlt = 1'b1;
+                        n_rob_valid[commit_idx] = 1'b0;
+                        n_rob_done[commit_idx] = 1'b0;
+                        n_rob_halt[commit_idx] = 1'b0;
+                        n_rob_has_dest[commit_idx] = 1'b0;
+                        n_rob_has_lsq[commit_idx] = 1'b0;
+                        n_rob_head = rob_inc(commit_idx);
+                        n_rob_count = n_rob_count - 5'd1;
+                        commit_stop = 1'b1;
+                        commit_idx = n_rob_head;
+                    end
+                    else if ((n_rob_opcode[commit_idx] == OP_STORE) && n_rob_has_lsq[commit_idx] &&
+                             n_lsq_valid[n_rob_lsq_idx[commit_idx]] && n_lsq_addr_ready[n_rob_lsq_idx[commit_idx]] &&
+                             n_lsq_data_ready[n_rob_lsq_idx[commit_idx]]) begin
+                        mem_write_en = 1'b1;
+                        mem_data_addr = n_lsq_addr[n_rob_lsq_idx[commit_idx]];
+                        mem_write_data = n_lsq_data_value[n_rob_lsq_idx[commit_idx]];
+                        n_lsq_valid[n_rob_lsq_idx[commit_idx]] = 1'b0;
+                        n_rob_valid[commit_idx] = 1'b0;
+                        n_rob_done[commit_idx] = 1'b0;
+                        n_rob_has_lsq[commit_idx] = 1'b0;
+                        n_rob_head = rob_inc(commit_idx);
+                        n_rob_count = n_rob_count - 5'd1;
+                        commit_stop = 1'b1;
+                        commit_idx = n_rob_head;
+                    end
+                    else if ((n_rob_opcode[commit_idx] == OP_CALL) && n_rob_done[commit_idx] &&
+                             n_rob_has_lsq[commit_idx] && n_lsq_valid[n_rob_lsq_idx[commit_idx]] &&
+                             n_lsq_addr_ready[n_rob_lsq_idx[commit_idx]] && n_lsq_data_ready[n_rob_lsq_idx[commit_idx]]) begin
+                        mem_write_en = 1'b1;
+                        mem_data_addr = n_lsq_addr[n_rob_lsq_idx[commit_idx]];
+                        mem_write_data = n_lsq_data_value[n_rob_lsq_idx[commit_idx]];
+                        n_lsq_valid[n_rob_lsq_idx[commit_idx]] = 1'b0;
+                        n_rob_valid[commit_idx] = 1'b0;
+                        n_rob_done[commit_idx] = 1'b0;
+                        n_rob_has_lsq[commit_idx] = 1'b0;
+                        n_rob_head = rob_inc(commit_idx);
+                        n_rob_count = n_rob_count - 5'd1;
+                        commit_stop = 1'b1;
+                        commit_idx = n_rob_head;
+                    end
+                    else if (n_rob_done[commit_idx]) begin
+                        if (n_rob_has_dest[commit_idx]) begin
+                            commit_phys = n_rob_new_phys[commit_idx];
+                            commit_old_phys = n_rob_old_phys[commit_idx];
+                            arf_commit0_write = 1'b1;
+                            arf_commit0_rd = n_rob_arch_dst[commit_idx];
+                            arf_commit0_data = n_prf_value[commit_phys];
+                            if (commit_old_phys >= ARCH_REGS)
+                                n_phys_free[commit_old_phys] = 1'b1;
+                        end
+                        if (n_rob_has_lsq[commit_idx]) begin
+                            n_lsq_valid[n_rob_lsq_idx[commit_idx]] = 1'b0;
+                        end
+                        n_rob_valid[commit_idx] = 1'b0;
+                        n_rob_done[commit_idx] = 1'b0;
+                        n_rob_halt[commit_idx] = 1'b0;
+                        n_rob_has_dest[commit_idx] = 1'b0;
+                        n_rob_has_lsq[commit_idx] = 1'b0;
+                        n_rob_head = rob_inc(commit_idx);
+                        n_rob_count = n_rob_count - 5'd1;
+                        commit_allow_second = 1'b1;
+                        commit_idx = n_rob_head;
+                    end
+                end
+
+                if (commit_allow_second && !commit_stop && (n_rob_count != 0) && n_rob_valid[commit_idx]) begin
+                    if (n_rob_halt[commit_idx] && n_rob_done[commit_idx]) begin
+                        n_hlt = 1'b1;
+                        n_rob_valid[commit_idx] = 1'b0;
+                        n_rob_done[commit_idx] = 1'b0;
+                        n_rob_halt[commit_idx] = 1'b0;
+                        n_rob_has_dest[commit_idx] = 1'b0;
+                        n_rob_has_lsq[commit_idx] = 1'b0;
+                        n_rob_head = rob_inc(commit_idx);
+                        n_rob_count = n_rob_count - 5'd1;
+                    end
+                    else if ((n_rob_opcode[commit_idx] != OP_STORE) && (n_rob_opcode[commit_idx] != OP_CALL) &&
+                             n_rob_done[commit_idx]) begin
+                        if (n_rob_has_dest[commit_idx]) begin
+                            commit_phys = n_rob_new_phys[commit_idx];
+                            commit_old_phys = n_rob_old_phys[commit_idx];
+                            arf_commit1_write = 1'b1;
+                            arf_commit1_rd = n_rob_arch_dst[commit_idx];
+                            arf_commit1_data = n_prf_value[commit_phys];
+                            if (commit_old_phys >= ARCH_REGS)
+                                n_phys_free[commit_old_phys] = 1'b1;
+                        end
+                        if (n_rob_has_lsq[commit_idx]) begin
+                            n_lsq_valid[n_rob_lsq_idx[commit_idx]] = 1'b0;
+                        end
+                        n_rob_valid[commit_idx] = 1'b0;
+                        n_rob_done[commit_idx] = 1'b0;
+                        n_rob_halt[commit_idx] = 1'b0;
+                        n_rob_has_dest[commit_idx] = 1'b0;
+                        n_rob_has_lsq[commit_idx] = 1'b0;
+                        n_rob_head = rob_inc(commit_idx);
+                        n_rob_count = n_rob_count - 5'd1;
+                    end
+                end
+            end
+
+            if (!n_hlt) begin : sched_block
             reg slot_found;
             reg blocked;
             reg stop_scan;
@@ -2980,6 +2980,7 @@ always @(*) begin
                     else
                         n_fetch_pc = fetch_pc + 64'd8;
                 end
+            end
             end
         end
     end
