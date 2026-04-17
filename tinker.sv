@@ -746,7 +746,7 @@ localparam FQ_SIZE     = 4;
 localparam [63:0] MEM_SIZE = 64'd524288;
 localparam PHYS_SIZE   = 64;
 localparam ARCH_REGS   = 32;
-localparam BTB_SIZE    = 8;
+localparam BTB_SIZE    = 32;
 
 localparam [4:0] OP_AND      = 5'h00;
 localparam [4:0] OP_OR       = 5'h01;
@@ -803,10 +803,10 @@ function [3:0] rob_inc;
     end
 endfunction
 
-function [2:0] btb_index;
+function [4:0] btb_index;
     input [63:0] pc_val;
     begin
-        btb_index = pc_val[4:2];
+        btb_index = pc_val[6:2];
     end
 endfunction
 
@@ -847,6 +847,27 @@ function is_cond_branch;
             OP_BR_NZ, OP_BR_GT: is_cond_branch = 1'b1;
             default: is_cond_branch = 1'b0;
         endcase
+    end
+endfunction
+
+function is_fast_branch_opcode;
+    input [4:0] opcode;
+    begin
+        case (opcode)
+            OP_BR_ABS, OP_BR_RREG, OP_BR_RLIT, OP_BR_NZ, OP_BR_GT, OP_CALL: is_fast_branch_opcode = 1'b1;
+            default: is_fast_branch_opcode = 1'b0;
+        endcase
+    end
+endfunction
+
+function [4:0] rob_age_distance;
+    input [3:0] head;
+    input [3:0] idx;
+    begin
+        if (idx >= head)
+            rob_age_distance = {1'b0, (idx - head)};
+        else
+            rob_age_distance = {1'b0, (idx + ROB_SIZE - head)};
     end
 endfunction
 
@@ -1165,6 +1186,24 @@ reg [5:0] ld_dest_phys, n_ld_dest_phys;
 reg [3:0] ld_lsq_idx, n_ld_lsq_idx;
 reg [63:0] ld_value, n_ld_value;
 
+reg br0_valid, n_br0_valid;
+reg [4:0] br0_opcode, n_br0_opcode;
+reg [11:0] br0_imm, n_br0_imm;
+reg [63:0] br0_pc, n_br0_pc;
+reg [3:0] br0_rob_idx, n_br0_rob_idx;
+reg [63:0] br0_s1, n_br0_s1;
+reg [63:0] br0_s2, n_br0_s2;
+reg [63:0] br0_s3, n_br0_s3;
+
+reg br1_valid, n_br1_valid;
+reg [4:0] br1_opcode, n_br1_opcode;
+reg [11:0] br1_imm, n_br1_imm;
+reg [63:0] br1_pc, n_br1_pc;
+reg [3:0] br1_rob_idx, n_br1_rob_idx;
+reg [63:0] br1_s1, n_br1_s1;
+reg [63:0] br1_s2, n_br1_s2;
+reg [63:0] br1_s3, n_br1_s3;
+
 reg n_hlt;
 
 // temp / helper regs
@@ -1175,13 +1214,13 @@ reg [5:0] cdb_tag [0:4];
 reg [63:0] cdb_value [0:4];
 reg [3:0] cdb_rob [0:4];
 reg apply_cdb [0:4];
-reg brcand_valid [0:2];
-reg [3:0] brcand_rob [0:2];
-reg [4:0] brcand_opcode [0:2];
-reg brcand_taken [0:2];
-reg [63:0] brcand_target [0:2];
-reg [63:0] brcand_pc [0:2];
-reg apply_brcand [0:2];
+reg brcand_valid [0:4];
+reg [3:0] brcand_rob [0:4];
+reg [4:0] brcand_opcode [0:4];
+reg brcand_taken [0:4];
+reg [63:0] brcand_target [0:4];
+reg [63:0] brcand_pc [0:4];
+reg apply_brcand [0:4];
 
 integer i;
 integer j;
@@ -1354,6 +1393,11 @@ reg int_issue0_valid;
 reg [2:0] int_issue0_idx;
 reg int_issue1_valid;
 reg [2:0] int_issue1_idx;
+
+reg br_issue0_valid;
+reg [2:0] br_issue0_idx;
+reg br_issue1_valid;
+reg [2:0] br_issue1_idx;
 
 reg fp_issue0_valid;
 reg [2:0] fp_issue0_idx;
@@ -1531,6 +1575,24 @@ always @(*) begin
     n_ld_lsq_idx = ld_lsq_idx;
     n_ld_value = ld_value;
 
+    n_br0_valid = br0_valid;
+    n_br0_opcode = br0_opcode;
+    n_br0_imm = br0_imm;
+    n_br0_pc = br0_pc;
+    n_br0_rob_idx = br0_rob_idx;
+    n_br0_s1 = br0_s1;
+    n_br0_s2 = br0_s2;
+    n_br0_s3 = br0_s3;
+
+    n_br1_valid = br1_valid;
+    n_br1_opcode = br1_opcode;
+    n_br1_imm = br1_imm;
+    n_br1_pc = br1_pc;
+    n_br1_rob_idx = br1_rob_idx;
+    n_br1_s1 = br1_s1;
+    n_br1_s2 = br1_s2;
+    n_br1_s3 = br1_s3;
+
     for (i = 0; i < FQ_SIZE; i = i + 1) begin
         n_fq_valid[i] = fq_valid[i];
         n_fq_inst[i] = fq_inst[i];
@@ -1640,7 +1702,7 @@ always @(*) begin
         apply_cdb[i] = 1'b0;
     end
 
-    for (i = 0; i < 3; i = i + 1) begin
+    for (i = 0; i < 5; i = i + 1) begin
         brcand_valid[i] = 1'b0;
         brcand_rob[i] = 4'd0;
         brcand_opcode[i] = 5'd0;
@@ -1654,42 +1716,122 @@ always @(*) begin
         // ------------------------------------------------------------
         // 2) collect execution completions into CDB / branch result slots
         // ------------------------------------------------------------
+        if (br0_valid) begin
+            brcand_valid[0] = 1'b1;
+            brcand_rob[0] = br0_rob_idx;
+            brcand_opcode[0] = br0_opcode;
+            brcand_pc[0] = br0_pc;
+            case (br0_opcode)
+                OP_BR_ABS, OP_CALL: begin
+                    brcand_taken[0] = 1'b1;
+                    brcand_target[0] = br0_s3;
+                end
+                OP_BR_RREG: begin
+                    brcand_taken[0] = 1'b1;
+                    brcand_target[0] = br0_pc + br0_s3;
+                end
+                OP_BR_RLIT: begin
+                    brcand_taken[0] = 1'b1;
+                    brcand_target[0] = br0_pc + sext12(br0_imm);
+                end
+                OP_BR_NZ: begin
+                    brcand_taken[0] = (br0_s1 != 64'd0);
+                    if (br0_s1 != 64'd0)
+                        brcand_target[0] = br0_s3;
+                    else
+                        brcand_target[0] = br0_pc + 64'd4;
+                end
+                OP_BR_GT: begin
+                    brcand_taken[0] = ($signed(br0_s1) > $signed(br0_s2));
+                    if ($signed(br0_s1) > $signed(br0_s2))
+                        brcand_target[0] = br0_s3;
+                    else
+                        brcand_target[0] = br0_pc + 64'd4;
+                end
+                default: begin
+                    brcand_taken[0] = 1'b0;
+                    brcand_target[0] = br0_pc + 64'd4;
+                end
+            endcase
+            n_br0_valid = 1'b0;
+        end
+
+        if (br1_valid) begin
+            brcand_valid[1] = 1'b1;
+            brcand_rob[1] = br1_rob_idx;
+            brcand_opcode[1] = br1_opcode;
+            brcand_pc[1] = br1_pc;
+            case (br1_opcode)
+                OP_BR_ABS, OP_CALL: begin
+                    brcand_taken[1] = 1'b1;
+                    brcand_target[1] = br1_s3;
+                end
+                OP_BR_RREG: begin
+                    brcand_taken[1] = 1'b1;
+                    brcand_target[1] = br1_pc + br1_s3;
+                end
+                OP_BR_RLIT: begin
+                    brcand_taken[1] = 1'b1;
+                    brcand_target[1] = br1_pc + sext12(br1_imm);
+                end
+                OP_BR_NZ: begin
+                    brcand_taken[1] = (br1_s1 != 64'd0);
+                    if (br1_s1 != 64'd0)
+                        brcand_target[1] = br1_s3;
+                    else
+                        brcand_target[1] = br1_pc + 64'd4;
+                end
+                OP_BR_GT: begin
+                    brcand_taken[1] = ($signed(br1_s1) > $signed(br1_s2));
+                    if ($signed(br1_s1) > $signed(br1_s2))
+                        brcand_target[1] = br1_s3;
+                    else
+                        brcand_target[1] = br1_pc + 64'd4;
+                end
+                default: begin
+                    brcand_taken[1] = 1'b0;
+                    brcand_target[1] = br1_pc + 64'd4;
+                end
+            endcase
+            n_br1_valid = 1'b0;
+        end
+
         if (alu0_valid) begin
             if (is_ctrl_opcode(alu0_opcode)) begin
-                brcand_valid[0] = 1'b1;
-                brcand_rob[0] = alu0_rob_idx;
-                brcand_opcode[0] = alu0_opcode;
-                brcand_pc[0] = alu0_pc;
+                brcand_valid[2] = 1'b1;
+                brcand_rob[2] = alu0_rob_idx;
+                brcand_opcode[2] = alu0_opcode;
+                brcand_pc[2] = alu0_pc;
                 case (alu0_opcode)
                     OP_BR_ABS, OP_CALL: begin
-                        brcand_taken[0] = 1'b1;
-                        brcand_target[0] = alu0_s3;
+                        brcand_taken[2] = 1'b1;
+                        brcand_target[2] = alu0_s3;
                     end
                     OP_BR_RREG: begin
-                        brcand_taken[0] = 1'b1;
-                        brcand_target[0] = alu0_pc + alu0_s3;
+                        brcand_taken[2] = 1'b1;
+                        brcand_target[2] = alu0_pc + alu0_s3;
                     end
                     OP_BR_RLIT: begin
-                        brcand_taken[0] = 1'b1;
-                        brcand_target[0] = alu0_pc + sext12(alu0_imm);
+                        brcand_taken[2] = 1'b1;
+                        brcand_target[2] = alu0_pc + sext12(alu0_imm);
                     end
                     OP_BR_NZ: begin
-                        brcand_taken[0] = (alu0_s1 != 64'd0);
+                        brcand_taken[2] = (alu0_s1 != 64'd0);
                         if (alu0_s1 != 64'd0)
-                            brcand_target[0] = alu0_s3;
+                            brcand_target[2] = alu0_s3;
                         else
-                            brcand_target[0] = alu0_pc + 64'd4;
+                            brcand_target[2] = alu0_pc + 64'd4;
                     end
                     OP_BR_GT: begin
-                        brcand_taken[0] = ($signed(alu0_s1) > $signed(alu0_s2));
+                        brcand_taken[2] = ($signed(alu0_s1) > $signed(alu0_s2));
                         if ($signed(alu0_s1) > $signed(alu0_s2))
-                            brcand_target[0] = alu0_s3;
+                            brcand_target[2] = alu0_s3;
                         else
-                            brcand_target[0] = alu0_pc + 64'd4;
+                            brcand_target[2] = alu0_pc + 64'd4;
                     end
                     default: begin
-                        brcand_taken[0] = 1'b0;
-                        brcand_target[0] = alu0_pc + 64'd4;
+                        brcand_taken[2] = 1'b0;
+                        brcand_target[2] = alu0_pc + 64'd4;
                     end
                 endcase
             end
@@ -1703,40 +1845,40 @@ always @(*) begin
 
         if (alu1_valid) begin
             if (is_ctrl_opcode(alu1_opcode)) begin
-                brcand_valid[1] = 1'b1;
-                brcand_rob[1] = alu1_rob_idx;
-                brcand_opcode[1] = alu1_opcode;
-                brcand_pc[1] = alu1_pc;
+                brcand_valid[3] = 1'b1;
+                brcand_rob[3] = alu1_rob_idx;
+                brcand_opcode[3] = alu1_opcode;
+                brcand_pc[3] = alu1_pc;
                 case (alu1_opcode)
                     OP_BR_ABS, OP_CALL: begin
-                        brcand_taken[1] = 1'b1;
-                        brcand_target[1] = alu1_s3;
+                        brcand_taken[3] = 1'b1;
+                        brcand_target[3] = alu1_s3;
                     end
                     OP_BR_RREG: begin
-                        brcand_taken[1] = 1'b1;
-                        brcand_target[1] = alu1_pc + alu1_s3;
+                        brcand_taken[3] = 1'b1;
+                        brcand_target[3] = alu1_pc + alu1_s3;
                     end
                     OP_BR_RLIT: begin
-                        brcand_taken[1] = 1'b1;
-                        brcand_target[1] = alu1_pc + sext12(alu1_imm);
+                        brcand_taken[3] = 1'b1;
+                        brcand_target[3] = alu1_pc + sext12(alu1_imm);
                     end
                     OP_BR_NZ: begin
-                        brcand_taken[1] = (alu1_s1 != 64'd0);
+                        brcand_taken[3] = (alu1_s1 != 64'd0);
                         if (alu1_s1 != 64'd0)
-                            brcand_target[1] = alu1_s3;
+                            brcand_target[3] = alu1_s3;
                         else
-                            brcand_target[1] = alu1_pc + 64'd4;
+                            brcand_target[3] = alu1_pc + 64'd4;
                     end
                     OP_BR_GT: begin
-                        brcand_taken[1] = ($signed(alu1_s1) > $signed(alu1_s2));
+                        brcand_taken[3] = ($signed(alu1_s1) > $signed(alu1_s2));
                         if ($signed(alu1_s1) > $signed(alu1_s2))
-                            brcand_target[1] = alu1_s3;
+                            brcand_target[3] = alu1_s3;
                         else
-                            brcand_target[1] = alu1_pc + 64'd4;
+                            brcand_target[3] = alu1_pc + 64'd4;
                     end
                     default: begin
-                        brcand_taken[1] = 1'b0;
-                        brcand_target[1] = alu1_pc + 64'd4;
+                        brcand_taken[3] = 1'b0;
+                        brcand_target[3] = alu1_pc + 64'd4;
                     end
                 endcase
             end
@@ -1768,12 +1910,12 @@ always @(*) begin
 
         if (ld_valid) begin
             if (ld_opcode == OP_RET) begin
-                brcand_valid[2] = 1'b1;
-                brcand_rob[2] = ld_rob_idx;
-                brcand_opcode[2] = ld_opcode;
-                brcand_taken[2] = 1'b1;
-                brcand_target[2] = ld_value;
-                brcand_pc[2] = rob_pc[ld_rob_idx];
+                brcand_valid[4] = 1'b1;
+                brcand_rob[4] = ld_rob_idx;
+                brcand_opcode[4] = ld_opcode;
+                brcand_taken[4] = 1'b1;
+                brcand_target[4] = ld_value;
+                brcand_pc[4] = rob_pc[ld_rob_idx];
             end
             else if (ld_has_dest) begin
                 cdb_valid[4] = 1'b1;
@@ -1791,7 +1933,7 @@ always @(*) begin
         k = n_rob_head;
         for (t = 0; t < ROB_SIZE; t = t + 1) begin
             if (n_rob_valid[k]) begin
-                for (i = 0; i < 3; i = i + 1) begin
+                for (i = 0; i < 5; i = i + 1) begin
                     if (!mispredict_valid && brcand_valid[i] && (brcand_rob[i] == k)) begin
                         if ((n_rob_pred_taken[k] != brcand_taken[i]) ||
                             (n_rob_pred_taken[k] && brcand_taken[i] &&
@@ -1824,7 +1966,7 @@ always @(*) begin
         for (i = 0; i < 5; i = i + 1) begin
             apply_cdb[i] = cdb_valid[i] && (!mispredict_valid || keep_rob[cdb_rob[i]]);
         end
-        for (i = 0; i < 3; i = i + 1) begin
+        for (i = 0; i < 5; i = i + 1) begin
             apply_brcand[i] = brcand_valid[i] && (!mispredict_valid || keep_rob[brcand_rob[i]]);
         end
 
@@ -1887,7 +2029,7 @@ always @(*) begin
         end
 
         if (ld_valid) begin
-            if ((ld_opcode == OP_RET) && apply_brcand[2])
+            if ((ld_opcode == OP_RET) && apply_brcand[4])
                 n_lsq_done[ld_lsq_idx] = 1'b1;
             else if (ld_has_dest && apply_cdb[4])
                 n_lsq_done[ld_lsq_idx] = 1'b1;
@@ -1905,7 +2047,7 @@ always @(*) begin
         end
 
         // branch predictor update + actual branch state capture for kept completions
-        for (i = 0; i < 3; i = i + 1) begin
+        for (i = 0; i < 5; i = i + 1) begin
             if (apply_brcand[i]) begin
                 n_rob_done[brcand_rob[i]] = 1'b1;
                 n_rob_branch_taken[brcand_rob[i]] = brcand_taken[i];
@@ -1966,6 +2108,11 @@ always @(*) begin
                     n_lsq_done[i] = 1'b0;
                 end
             end
+
+            if (n_br0_valid && !keep_rob[n_br0_rob_idx])
+                n_br0_valid = 1'b0;
+            if (n_br1_valid && !keep_rob[n_br1_rob_idx])
+                n_br1_valid = 1'b0;
 
             if (n_alu0_s0_valid && !keep_rob[n_alu0_s0_rob_idx])
                 n_alu0_s0_valid = 1'b0;
@@ -2180,21 +2327,99 @@ always @(*) begin
             // ------------------------------------------------------------
             // 3) issue ready integer / FP ops into the free execution slots
             // ------------------------------------------------------------
-            int_issue0_valid = 1'b0;
-            int_issue0_idx = 3'd0;
-            int_issue1_valid = 1'b0;
-            int_issue1_idx = 3'd0;
-            for (i = 0; i < INT_RS_SIZE; i = i + 1) begin
-                if (n_int_rs_valid[i] && int_entry_ready(n_int_rs_opcode[i], n_int_rs_s1_ready[i], n_int_rs_s2_ready[i], n_int_rs_s3_ready[i])) begin
-                    if (!int_issue0_valid) begin
-                        int_issue0_valid = 1'b1;
-                        int_issue0_idx = i[2:0];
-                    end
-                    else if (!int_issue1_valid) begin
-                        int_issue1_valid = 1'b1;
-                        int_issue1_idx = i[2:0];
+            begin : select_ready_int
+                reg [4:0] age0;
+                reg [4:0] age1;
+                reg [4:0] agev;
+                reg [2:0] idx0;
+                reg [2:0] idx1;
+                reg [4:0] br_age0;
+                reg [4:0] br_age1;
+                reg [4:0] br_agev;
+                reg [2:0] br_idx0;
+                reg [2:0] br_idx1;
+
+                int_issue0_valid = 1'b0;
+                int_issue0_idx = 3'd0;
+                int_issue1_valid = 1'b0;
+                int_issue1_idx = 3'd0;
+                br_issue0_valid = 1'b0;
+                br_issue0_idx = 3'd0;
+                br_issue1_valid = 1'b0;
+                br_issue1_idx = 3'd0;
+                age0 = 5'd31;
+                age1 = 5'd31;
+                br_age0 = 5'd31;
+                br_age1 = 5'd31;
+                idx0 = 3'd0;
+                idx1 = 3'd0;
+                br_idx0 = 3'd0;
+                br_idx1 = 3'd0;
+
+                for (i = 0; i < INT_RS_SIZE; i = i + 1) begin
+                    if (n_int_rs_valid[i] && int_entry_ready(n_int_rs_opcode[i], n_int_rs_s1_ready[i], n_int_rs_s2_ready[i], n_int_rs_s3_ready[i])) begin
+                        if (is_fast_branch_opcode(n_int_rs_opcode[i])) begin
+                            br_agev = rob_age_distance(n_rob_head, n_int_rs_rob_idx[i]);
+                            if (!br_issue0_valid || (br_agev < br_age0)) begin
+                                br_issue1_valid = br_issue0_valid;
+                                br_issue1_idx = br_idx0;
+                                br_age1 = br_age0;
+                                br_issue0_valid = 1'b1;
+                                br_issue0_idx = i[2:0];
+                                br_idx0 = i[2:0];
+                                br_age0 = br_agev;
+                            end
+                            else if (!br_issue1_valid || (br_agev < br_age1)) begin
+                                br_issue1_valid = 1'b1;
+                                br_issue1_idx = i[2:0];
+                                br_idx1 = i[2:0];
+                                br_age1 = br_agev;
+                            end
+                        end
+                        else begin
+                            agev = rob_age_distance(n_rob_head, n_int_rs_rob_idx[i]);
+                            if (!int_issue0_valid || (agev < age0)) begin
+                                int_issue1_valid = int_issue0_valid;
+                                int_issue1_idx = idx0;
+                                age1 = age0;
+                                int_issue0_valid = 1'b1;
+                                int_issue0_idx = i[2:0];
+                                idx0 = i[2:0];
+                                age0 = agev;
+                            end
+                            else if (!int_issue1_valid || (agev < age1)) begin
+                                int_issue1_valid = 1'b1;
+                                int_issue1_idx = i[2:0];
+                                idx1 = i[2:0];
+                                age1 = agev;
+                            end
+                        end
                     end
                 end
+            end
+
+            if (br_issue0_valid) begin
+                n_br0_valid = 1'b1;
+                n_br0_opcode = n_int_rs_opcode[br_issue0_idx];
+                n_br0_imm = n_int_rs_imm[br_issue0_idx];
+                n_br0_pc = n_int_rs_pc[br_issue0_idx];
+                n_br0_rob_idx = n_int_rs_rob_idx[br_issue0_idx];
+                n_br0_s1 = n_int_rs_s1_value[br_issue0_idx];
+                n_br0_s2 = n_int_rs_s2_value[br_issue0_idx];
+                n_br0_s3 = n_int_rs_s3_value[br_issue0_idx];
+                n_int_rs_valid[br_issue0_idx] = 1'b0;
+            end
+
+            if (br_issue1_valid) begin
+                n_br1_valid = 1'b1;
+                n_br1_opcode = n_int_rs_opcode[br_issue1_idx];
+                n_br1_imm = n_int_rs_imm[br_issue1_idx];
+                n_br1_pc = n_int_rs_pc[br_issue1_idx];
+                n_br1_rob_idx = n_int_rs_rob_idx[br_issue1_idx];
+                n_br1_s1 = n_int_rs_s1_value[br_issue1_idx];
+                n_br1_s2 = n_int_rs_s2_value[br_issue1_idx];
+                n_br1_s3 = n_int_rs_s3_value[br_issue1_idx];
+                n_int_rs_valid[br_issue1_idx] = 1'b0;
             end
 
             if (int_issue0_valid) begin
@@ -2913,7 +3138,8 @@ always @(*) begin
                         end
                     end
                     OP_BR_NZ, OP_BR_GT: begin
-                        if (btb_valid[btb_index(fetch_pc)] && (btb_tag[btb_index(fetch_pc)] == fetch_pc) && bht[btb_index(fetch_pc)][1]) begin
+                        if (btb_valid[btb_index(fetch_pc)] && (btb_tag[btb_index(fetch_pc)] == fetch_pc) &&
+                            (bht[btb_index(fetch_pc)][1] || (btb_target[btb_index(fetch_pc)] < fetch_pc))) begin
                             fetch0_pred_taken = 1'b1;
                             fetch0_pred_target = btb_target[btb_index(fetch_pc)];
                         end
@@ -2956,7 +3182,8 @@ always @(*) begin
                             end
                         end
                         OP_BR_NZ, OP_BR_GT: begin
-                            if (btb_valid[btb_index(fetch_pc + 64'd4)] && (btb_tag[btb_index(fetch_pc + 64'd4)] == (fetch_pc + 64'd4)) && bht[btb_index(fetch_pc + 64'd4)][1]) begin
+                            if (btb_valid[btb_index(fetch_pc + 64'd4)] && (btb_tag[btb_index(fetch_pc + 64'd4)] == (fetch_pc + 64'd4)) &&
+                                (bht[btb_index(fetch_pc + 64'd4)][1] || (btb_target[btb_index(fetch_pc + 64'd4)] < (fetch_pc + 64'd4)))) begin
                                 fetch1_pred_taken = 1'b1;
                                 fetch1_pred_target = btb_target[btb_index(fetch_pc + 64'd4)];
                             end
@@ -3127,6 +3354,24 @@ always @(posedge clk or posedge reset) begin
         ld_dest_phys <= 6'd0;
         ld_lsq_idx <= 4'd0;
         ld_value <= 64'd0;
+
+        br0_valid <= 1'b0;
+        br0_opcode <= 5'd0;
+        br0_imm <= 12'd0;
+        br0_pc <= 64'd0;
+        br0_rob_idx <= 4'd0;
+        br0_s1 <= 64'd0;
+        br0_s2 <= 64'd0;
+        br0_s3 <= 64'd0;
+
+        br1_valid <= 1'b0;
+        br1_opcode <= 5'd0;
+        br1_imm <= 12'd0;
+        br1_pc <= 64'd0;
+        br1_rob_idx <= 4'd0;
+        br1_s1 <= 64'd0;
+        br1_s2 <= 64'd0;
+        br1_s3 <= 64'd0;
 
         for (i = 0; i < FQ_SIZE; i = i + 1) begin
             fq_valid[i] <= 1'b0;
@@ -3374,6 +3619,24 @@ always @(posedge clk or posedge reset) begin
         ld_dest_phys <= n_ld_dest_phys;
         ld_lsq_idx <= n_ld_lsq_idx;
         ld_value <= n_ld_value;
+
+        br0_valid <= n_br0_valid;
+        br0_opcode <= n_br0_opcode;
+        br0_imm <= n_br0_imm;
+        br0_pc <= n_br0_pc;
+        br0_rob_idx <= n_br0_rob_idx;
+        br0_s1 <= n_br0_s1;
+        br0_s2 <= n_br0_s2;
+        br0_s3 <= n_br0_s3;
+
+        br1_valid <= n_br1_valid;
+        br1_opcode <= n_br1_opcode;
+        br1_imm <= n_br1_imm;
+        br1_pc <= n_br1_pc;
+        br1_rob_idx <= n_br1_rob_idx;
+        br1_s1 <= n_br1_s1;
+        br1_s2 <= n_br1_s2;
+        br1_s3 <= n_br1_s3;
 
         for (i = 0; i < FQ_SIZE; i = i + 1) begin
             fq_valid[i] <= n_fq_valid[i];
