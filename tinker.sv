@@ -1031,6 +1031,30 @@ reg n_lsq_addr_ready [0:LSQ_SIZE-1];
 reg [63:0] lsq_addr [0:LSQ_SIZE-1];
 reg [63:0] n_lsq_addr [0:LSQ_SIZE-1];
 
+reg alu0_s0_valid, n_alu0_s0_valid;
+reg [4:0] alu0_s0_opcode, n_alu0_s0_opcode;
+reg [4:0] alu0_s0_alu_op, n_alu0_s0_alu_op;
+reg [11:0] alu0_s0_imm, n_alu0_s0_imm;
+reg [63:0] alu0_s0_pc, n_alu0_s0_pc;
+reg [3:0] alu0_s0_rob_idx, n_alu0_s0_rob_idx;
+reg alu0_s0_has_dest, n_alu0_s0_has_dest;
+reg [5:0] alu0_s0_dest_phys, n_alu0_s0_dest_phys;
+reg [63:0] alu0_s0_s1, n_alu0_s0_s1;
+reg [63:0] alu0_s0_s2, n_alu0_s0_s2;
+reg [63:0] alu0_s0_s3, n_alu0_s0_s3;
+
+reg alu0_s1_valid, n_alu0_s1_valid;
+reg [4:0] alu0_s1_opcode, n_alu0_s1_opcode;
+reg [4:0] alu0_s1_alu_op, n_alu0_s1_alu_op;
+reg [11:0] alu0_s1_imm, n_alu0_s1_imm;
+reg [63:0] alu0_s1_pc, n_alu0_s1_pc;
+reg [3:0] alu0_s1_rob_idx, n_alu0_s1_rob_idx;
+reg alu0_s1_has_dest, n_alu0_s1_has_dest;
+reg [5:0] alu0_s1_dest_phys, n_alu0_s1_dest_phys;
+reg [63:0] alu0_s1_s1, n_alu0_s1_s1;
+reg [63:0] alu0_s1_s2, n_alu0_s1_s2;
+reg [63:0] alu0_s1_s3, n_alu0_s1_s3;
+
 reg alu0_valid, n_alu0_valid;
 reg [4:0] alu0_opcode, n_alu0_opcode;
 reg [4:0] alu0_alu_op, n_alu0_alu_op;
@@ -1042,6 +1066,30 @@ reg [5:0] alu0_dest_phys, n_alu0_dest_phys;
 reg [63:0] alu0_s1, n_alu0_s1;
 reg [63:0] alu0_s2, n_alu0_s2;
 reg [63:0] alu0_s3, n_alu0_s3;
+
+reg alu1_s0_valid, n_alu1_s0_valid;
+reg [4:0] alu1_s0_opcode, n_alu1_s0_opcode;
+reg [4:0] alu1_s0_alu_op, n_alu1_s0_alu_op;
+reg [11:0] alu1_s0_imm, n_alu1_s0_imm;
+reg [63:0] alu1_s0_pc, n_alu1_s0_pc;
+reg [3:0] alu1_s0_rob_idx, n_alu1_s0_rob_idx;
+reg alu1_s0_has_dest, n_alu1_s0_has_dest;
+reg [5:0] alu1_s0_dest_phys, n_alu1_s0_dest_phys;
+reg [63:0] alu1_s0_s1, n_alu1_s0_s1;
+reg [63:0] alu1_s0_s2, n_alu1_s0_s2;
+reg [63:0] alu1_s0_s3, n_alu1_s0_s3;
+
+reg alu1_s1_valid, n_alu1_s1_valid;
+reg [4:0] alu1_s1_opcode, n_alu1_s1_opcode;
+reg [4:0] alu1_s1_alu_op, n_alu1_s1_alu_op;
+reg [11:0] alu1_s1_imm, n_alu1_s1_imm;
+reg [63:0] alu1_s1_pc, n_alu1_s1_pc;
+reg [3:0] alu1_s1_rob_idx, n_alu1_s1_rob_idx;
+reg alu1_s1_has_dest, n_alu1_s1_has_dest;
+reg [5:0] alu1_s1_dest_phys, n_alu1_s1_dest_phys;
+reg [63:0] alu1_s1_s1, n_alu1_s1_s1;
+reg [63:0] alu1_s1_s2, n_alu1_s1_s2;
+reg [63:0] alu1_s1_s3, n_alu1_s1_s3;
 
 reg alu1_valid, n_alu1_valid;
 reg [4:0] alu1_opcode, n_alu1_opcode;
@@ -1055,6 +1103,24 @@ reg [63:0] alu1_s1, n_alu1_s1;
 reg [63:0] alu1_s2, n_alu1_s2;
 reg [63:0] alu1_s3, n_alu1_s3;
 
+reg fpu0_s0_valid, n_fpu0_s0_valid;
+reg [4:0] fpu0_s0_opcode, n_fpu0_s0_opcode;
+reg [4:0] fpu0_s0_fpu_op, n_fpu0_s0_fpu_op;
+reg [3:0] fpu0_s0_rob_idx, n_fpu0_s0_rob_idx;
+reg fpu0_s0_has_dest, n_fpu0_s0_has_dest;
+reg [5:0] fpu0_s0_dest_phys, n_fpu0_s0_dest_phys;
+reg [63:0] fpu0_s0_s1, n_fpu0_s0_s1;
+reg [63:0] fpu0_s0_s2, n_fpu0_s0_s2;
+
+reg fpu0_s1_valid, n_fpu0_s1_valid;
+reg [4:0] fpu0_s1_opcode, n_fpu0_s1_opcode;
+reg [4:0] fpu0_s1_fpu_op, n_fpu0_s1_fpu_op;
+reg [3:0] fpu0_s1_rob_idx, n_fpu0_s1_rob_idx;
+reg fpu0_s1_has_dest, n_fpu0_s1_has_dest;
+reg [5:0] fpu0_s1_dest_phys, n_fpu0_s1_dest_phys;
+reg [63:0] fpu0_s1_s1, n_fpu0_s1_s1;
+reg [63:0] fpu0_s1_s2, n_fpu0_s1_s2;
+
 reg fpu0_valid, n_fpu0_valid;
 reg [4:0] fpu0_opcode, n_fpu0_opcode;
 reg [4:0] fpu0_fpu_op, n_fpu0_fpu_op;
@@ -1063,6 +1129,24 @@ reg fpu0_has_dest, n_fpu0_has_dest;
 reg [5:0] fpu0_dest_phys, n_fpu0_dest_phys;
 reg [63:0] fpu0_s1, n_fpu0_s1;
 reg [63:0] fpu0_s2, n_fpu0_s2;
+
+reg fpu1_s0_valid, n_fpu1_s0_valid;
+reg [4:0] fpu1_s0_opcode, n_fpu1_s0_opcode;
+reg [4:0] fpu1_s0_fpu_op, n_fpu1_s0_fpu_op;
+reg [3:0] fpu1_s0_rob_idx, n_fpu1_s0_rob_idx;
+reg fpu1_s0_has_dest, n_fpu1_s0_has_dest;
+reg [5:0] fpu1_s0_dest_phys, n_fpu1_s0_dest_phys;
+reg [63:0] fpu1_s0_s1, n_fpu1_s0_s1;
+reg [63:0] fpu1_s0_s2, n_fpu1_s0_s2;
+
+reg fpu1_s1_valid, n_fpu1_s1_valid;
+reg [4:0] fpu1_s1_opcode, n_fpu1_s1_opcode;
+reg [4:0] fpu1_s1_fpu_op, n_fpu1_s1_fpu_op;
+reg [3:0] fpu1_s1_rob_idx, n_fpu1_s1_rob_idx;
+reg fpu1_s1_has_dest, n_fpu1_s1_has_dest;
+reg [5:0] fpu1_s1_dest_phys, n_fpu1_s1_dest_phys;
+reg [63:0] fpu1_s1_s1, n_fpu1_s1_s1;
+reg [63:0] fpu1_s1_s2, n_fpu1_s1_s2;
 
 reg fpu1_valid, n_fpu1_valid;
 reg [4:0] fpu1_opcode, n_fpu1_opcode;
@@ -1313,47 +1397,131 @@ always @(*) begin
     n_rob_tail = rob_tail;
     n_rob_count = rob_count;
 
-    n_alu0_valid = alu0_valid;
-    n_alu0_opcode = alu0_opcode;
-    n_alu0_alu_op = alu0_alu_op;
-    n_alu0_imm = alu0_imm;
-    n_alu0_pc = alu0_pc;
-    n_alu0_rob_idx = alu0_rob_idx;
-    n_alu0_has_dest = alu0_has_dest;
-    n_alu0_dest_phys = alu0_dest_phys;
-    n_alu0_s1 = alu0_s1;
-    n_alu0_s2 = alu0_s2;
-    n_alu0_s3 = alu0_s3;
+    n_alu0_valid = alu0_s1_valid;
+    n_alu0_opcode = alu0_s1_opcode;
+    n_alu0_alu_op = alu0_s1_alu_op;
+    n_alu0_imm = alu0_s1_imm;
+    n_alu0_pc = alu0_s1_pc;
+    n_alu0_rob_idx = alu0_s1_rob_idx;
+    n_alu0_has_dest = alu0_s1_has_dest;
+    n_alu0_dest_phys = alu0_s1_dest_phys;
+    n_alu0_s1 = alu0_s1_s1;
+    n_alu0_s2 = alu0_s1_s2;
+    n_alu0_s3 = alu0_s1_s3;
 
-    n_alu1_valid = alu1_valid;
-    n_alu1_opcode = alu1_opcode;
-    n_alu1_alu_op = alu1_alu_op;
-    n_alu1_imm = alu1_imm;
-    n_alu1_pc = alu1_pc;
-    n_alu1_rob_idx = alu1_rob_idx;
-    n_alu1_has_dest = alu1_has_dest;
-    n_alu1_dest_phys = alu1_dest_phys;
-    n_alu1_s1 = alu1_s1;
-    n_alu1_s2 = alu1_s2;
-    n_alu1_s3 = alu1_s3;
+    n_alu0_s1_valid = alu0_s0_valid;
+    n_alu0_s1_opcode = alu0_s0_opcode;
+    n_alu0_s1_alu_op = alu0_s0_alu_op;
+    n_alu0_s1_imm = alu0_s0_imm;
+    n_alu0_s1_pc = alu0_s0_pc;
+    n_alu0_s1_rob_idx = alu0_s0_rob_idx;
+    n_alu0_s1_has_dest = alu0_s0_has_dest;
+    n_alu0_s1_dest_phys = alu0_s0_dest_phys;
+    n_alu0_s1_s1 = alu0_s0_s1;
+    n_alu0_s1_s2 = alu0_s0_s2;
+    n_alu0_s1_s3 = alu0_s0_s3;
 
-    n_fpu0_valid = fpu0_valid;
-    n_fpu0_opcode = fpu0_opcode;
-    n_fpu0_fpu_op = fpu0_fpu_op;
-    n_fpu0_rob_idx = fpu0_rob_idx;
-    n_fpu0_has_dest = fpu0_has_dest;
-    n_fpu0_dest_phys = fpu0_dest_phys;
-    n_fpu0_s1 = fpu0_s1;
-    n_fpu0_s2 = fpu0_s2;
+    n_alu0_s0_valid = 1'b0;
+    n_alu0_s0_opcode = 5'd0;
+    n_alu0_s0_alu_op = 5'd0;
+    n_alu0_s0_imm = 12'd0;
+    n_alu0_s0_pc = 64'd0;
+    n_alu0_s0_rob_idx = 4'd0;
+    n_alu0_s0_has_dest = 1'b0;
+    n_alu0_s0_dest_phys = 6'd0;
+    n_alu0_s0_s1 = 64'd0;
+    n_alu0_s0_s2 = 64'd0;
+    n_alu0_s0_s3 = 64'd0;
 
-    n_fpu1_valid = fpu1_valid;
-    n_fpu1_opcode = fpu1_opcode;
-    n_fpu1_fpu_op = fpu1_fpu_op;
-    n_fpu1_rob_idx = fpu1_rob_idx;
-    n_fpu1_has_dest = fpu1_has_dest;
-    n_fpu1_dest_phys = fpu1_dest_phys;
-    n_fpu1_s1 = fpu1_s1;
-    n_fpu1_s2 = fpu1_s2;
+    n_alu1_valid = alu1_s1_valid;
+    n_alu1_opcode = alu1_s1_opcode;
+    n_alu1_alu_op = alu1_s1_alu_op;
+    n_alu1_imm = alu1_s1_imm;
+    n_alu1_pc = alu1_s1_pc;
+    n_alu1_rob_idx = alu1_s1_rob_idx;
+    n_alu1_has_dest = alu1_s1_has_dest;
+    n_alu1_dest_phys = alu1_s1_dest_phys;
+    n_alu1_s1 = alu1_s1_s1;
+    n_alu1_s2 = alu1_s1_s2;
+    n_alu1_s3 = alu1_s1_s3;
+
+    n_alu1_s1_valid = alu1_s0_valid;
+    n_alu1_s1_opcode = alu1_s0_opcode;
+    n_alu1_s1_alu_op = alu1_s0_alu_op;
+    n_alu1_s1_imm = alu1_s0_imm;
+    n_alu1_s1_pc = alu1_s0_pc;
+    n_alu1_s1_rob_idx = alu1_s0_rob_idx;
+    n_alu1_s1_has_dest = alu1_s0_has_dest;
+    n_alu1_s1_dest_phys = alu1_s0_dest_phys;
+    n_alu1_s1_s1 = alu1_s0_s1;
+    n_alu1_s1_s2 = alu1_s0_s2;
+    n_alu1_s1_s3 = alu1_s0_s3;
+
+    n_alu1_s0_valid = 1'b0;
+    n_alu1_s0_opcode = 5'd0;
+    n_alu1_s0_alu_op = 5'd0;
+    n_alu1_s0_imm = 12'd0;
+    n_alu1_s0_pc = 64'd0;
+    n_alu1_s0_rob_idx = 4'd0;
+    n_alu1_s0_has_dest = 1'b0;
+    n_alu1_s0_dest_phys = 6'd0;
+    n_alu1_s0_s1 = 64'd0;
+    n_alu1_s0_s2 = 64'd0;
+    n_alu1_s0_s3 = 64'd0;
+
+    n_fpu0_valid = fpu0_s1_valid;
+    n_fpu0_opcode = fpu0_s1_opcode;
+    n_fpu0_fpu_op = fpu0_s1_fpu_op;
+    n_fpu0_rob_idx = fpu0_s1_rob_idx;
+    n_fpu0_has_dest = fpu0_s1_has_dest;
+    n_fpu0_dest_phys = fpu0_s1_dest_phys;
+    n_fpu0_s1 = fpu0_s1_s1;
+    n_fpu0_s2 = fpu0_s1_s2;
+
+    n_fpu0_s1_valid = fpu0_s0_valid;
+    n_fpu0_s1_opcode = fpu0_s0_opcode;
+    n_fpu0_s1_fpu_op = fpu0_s0_fpu_op;
+    n_fpu0_s1_rob_idx = fpu0_s0_rob_idx;
+    n_fpu0_s1_has_dest = fpu0_s0_has_dest;
+    n_fpu0_s1_dest_phys = fpu0_s0_dest_phys;
+    n_fpu0_s1_s1 = fpu0_s0_s1;
+    n_fpu0_s1_s2 = fpu0_s0_s2;
+
+    n_fpu0_s0_valid = 1'b0;
+    n_fpu0_s0_opcode = 5'd0;
+    n_fpu0_s0_fpu_op = 5'd0;
+    n_fpu0_s0_rob_idx = 4'd0;
+    n_fpu0_s0_has_dest = 1'b0;
+    n_fpu0_s0_dest_phys = 6'd0;
+    n_fpu0_s0_s1 = 64'd0;
+    n_fpu0_s0_s2 = 64'd0;
+
+    n_fpu1_valid = fpu1_s1_valid;
+    n_fpu1_opcode = fpu1_s1_opcode;
+    n_fpu1_fpu_op = fpu1_s1_fpu_op;
+    n_fpu1_rob_idx = fpu1_s1_rob_idx;
+    n_fpu1_has_dest = fpu1_s1_has_dest;
+    n_fpu1_dest_phys = fpu1_s1_dest_phys;
+    n_fpu1_s1 = fpu1_s1_s1;
+    n_fpu1_s2 = fpu1_s1_s2;
+
+    n_fpu1_s1_valid = fpu1_s0_valid;
+    n_fpu1_s1_opcode = fpu1_s0_opcode;
+    n_fpu1_s1_fpu_op = fpu1_s0_fpu_op;
+    n_fpu1_s1_rob_idx = fpu1_s0_rob_idx;
+    n_fpu1_s1_has_dest = fpu1_s0_has_dest;
+    n_fpu1_s1_dest_phys = fpu1_s0_dest_phys;
+    n_fpu1_s1_s1 = fpu1_s0_s1;
+    n_fpu1_s1_s2 = fpu1_s0_s2;
+
+    n_fpu1_s0_valid = 1'b0;
+    n_fpu1_s0_opcode = 5'd0;
+    n_fpu1_s0_fpu_op = 5'd0;
+    n_fpu1_s0_rob_idx = 4'd0;
+    n_fpu1_s0_has_dest = 1'b0;
+    n_fpu1_s0_dest_phys = 6'd0;
+    n_fpu1_s0_s1 = 64'd0;
+    n_fpu1_s0_s2 = 64'd0;
 
     n_ld_valid = ld_valid;
     n_ld_opcode = ld_opcode;
@@ -1651,7 +1819,6 @@ always @(*) begin
                 cdb_value[0] = alu0_result_wire;
                 cdb_rob[0] = alu0_rob_idx;
             end
-            n_alu0_valid = 1'b0;
         end
 
         if (alu1_valid) begin
@@ -1699,7 +1866,6 @@ always @(*) begin
                 cdb_value[1] = alu1_result_wire;
                 cdb_rob[1] = alu1_rob_idx;
             end
-            n_alu1_valid = 1'b0;
         end
 
         if (fpu0_valid) begin
@@ -1709,7 +1875,6 @@ always @(*) begin
                 cdb_value[2] = fpu0_result_wire;
                 cdb_rob[2] = fpu0_rob_idx;
             end
-            n_fpu0_valid = 1'b0;
         end
 
         if (fpu1_valid) begin
@@ -1719,7 +1884,6 @@ always @(*) begin
                 cdb_value[3] = fpu1_result_wire;
                 cdb_rob[3] = fpu1_rob_idx;
             end
-            n_fpu1_valid = 1'b0;
         end
 
         if (ld_valid) begin
@@ -1924,12 +2088,28 @@ always @(*) begin
                 end
             end
 
+            if (n_alu0_s0_valid && !keep_rob[n_alu0_s0_rob_idx])
+                n_alu0_s0_valid = 1'b0;
+            if (n_alu0_s1_valid && !keep_rob[n_alu0_s1_rob_idx])
+                n_alu0_s1_valid = 1'b0;
             if (n_alu0_valid && !keep_rob[n_alu0_rob_idx])
                 n_alu0_valid = 1'b0;
+            if (n_alu1_s0_valid && !keep_rob[n_alu1_s0_rob_idx])
+                n_alu1_s0_valid = 1'b0;
+            if (n_alu1_s1_valid && !keep_rob[n_alu1_s1_rob_idx])
+                n_alu1_s1_valid = 1'b0;
             if (n_alu1_valid && !keep_rob[n_alu1_rob_idx])
                 n_alu1_valid = 1'b0;
+            if (n_fpu0_s0_valid && !keep_rob[n_fpu0_s0_rob_idx])
+                n_fpu0_s0_valid = 1'b0;
+            if (n_fpu0_s1_valid && !keep_rob[n_fpu0_s1_rob_idx])
+                n_fpu0_s1_valid = 1'b0;
             if (n_fpu0_valid && !keep_rob[n_fpu0_rob_idx])
                 n_fpu0_valid = 1'b0;
+            if (n_fpu1_s0_valid && !keep_rob[n_fpu1_s0_rob_idx])
+                n_fpu1_s0_valid = 1'b0;
+            if (n_fpu1_s1_valid && !keep_rob[n_fpu1_s1_rob_idx])
+                n_fpu1_s1_valid = 1'b0;
             if (n_fpu1_valid && !keep_rob[n_fpu1_rob_idx])
                 n_fpu1_valid = 1'b0;
             if (n_ld_valid && !keep_rob[n_ld_rob_idx])
@@ -1951,7 +2131,7 @@ always @(*) begin
             end
             for (i = 0; i < ROB_SIZE; i = i + 1) begin
                 if (n_rob_valid[i] && keep_rob[i] && n_rob_has_dest[i])
-                    used_phys[n_rob_old_phys[i]] = 1'b1;
+                    used_phys[n_rob_new_phys[i]] = 1'b1;
             end
             for (i = 0; i < PHYS_SIZE; i = i + 1) begin
                 if (i < ARCH_REGS)
@@ -2017,51 +2197,33 @@ always @(*) begin
                 end
             end
 
-            slot_found = !n_alu0_valid;
-            blocked = !n_alu1_valid;
-            if (slot_found && int_issue0_valid) begin
-                n_alu0_valid = 1'b1;
-                n_alu0_opcode = n_int_rs_opcode[int_issue0_idx];
-                n_alu0_alu_op = n_int_rs_alu_op[int_issue0_idx];
-                n_alu0_imm = n_int_rs_imm[int_issue0_idx];
-                n_alu0_pc = n_int_rs_pc[int_issue0_idx];
-                n_alu0_rob_idx = n_int_rs_rob_idx[int_issue0_idx];
-                n_alu0_has_dest = n_int_rs_has_dest[int_issue0_idx];
-                n_alu0_dest_phys = n_int_rs_dest_phys[int_issue0_idx];
-                n_alu0_s1 = n_int_rs_s1_value[int_issue0_idx];
-                n_alu0_s2 = n_int_rs_s2_value[int_issue0_idx];
-                n_alu0_s3 = n_int_rs_s3_value[int_issue0_idx];
+            if (int_issue0_valid) begin
+                n_alu0_s0_valid = 1'b1;
+                n_alu0_s0_opcode = n_int_rs_opcode[int_issue0_idx];
+                n_alu0_s0_alu_op = n_int_rs_alu_op[int_issue0_idx];
+                n_alu0_s0_imm = n_int_rs_imm[int_issue0_idx];
+                n_alu0_s0_pc = n_int_rs_pc[int_issue0_idx];
+                n_alu0_s0_rob_idx = n_int_rs_rob_idx[int_issue0_idx];
+                n_alu0_s0_has_dest = n_int_rs_has_dest[int_issue0_idx];
+                n_alu0_s0_dest_phys = n_int_rs_dest_phys[int_issue0_idx];
+                n_alu0_s0_s1 = n_int_rs_s1_value[int_issue0_idx];
+                n_alu0_s0_s2 = n_int_rs_s2_value[int_issue0_idx];
+                n_alu0_s0_s3 = n_int_rs_s3_value[int_issue0_idx];
                 n_int_rs_valid[int_issue0_idx] = 1'b0;
             end
-            if (blocked) begin
-                if (slot_found && int_issue1_valid) begin
-                    n_alu1_valid = 1'b1;
-                    n_alu1_opcode = n_int_rs_opcode[int_issue1_idx];
-                    n_alu1_alu_op = n_int_rs_alu_op[int_issue1_idx];
-                    n_alu1_imm = n_int_rs_imm[int_issue1_idx];
-                    n_alu1_pc = n_int_rs_pc[int_issue1_idx];
-                    n_alu1_rob_idx = n_int_rs_rob_idx[int_issue1_idx];
-                    n_alu1_has_dest = n_int_rs_has_dest[int_issue1_idx];
-                    n_alu1_dest_phys = n_int_rs_dest_phys[int_issue1_idx];
-                    n_alu1_s1 = n_int_rs_s1_value[int_issue1_idx];
-                    n_alu1_s2 = n_int_rs_s2_value[int_issue1_idx];
-                    n_alu1_s3 = n_int_rs_s3_value[int_issue1_idx];
-                    n_int_rs_valid[int_issue1_idx] = 1'b0;
-                end
-                else if (!slot_found && int_issue0_valid) begin
-                    n_alu1_valid = 1'b1;
-                    n_alu1_opcode = n_int_rs_opcode[int_issue0_idx];
-                    n_alu1_alu_op = n_int_rs_alu_op[int_issue0_idx];
-                    n_alu1_imm = n_int_rs_imm[int_issue0_idx];
-                    n_alu1_pc = n_int_rs_pc[int_issue0_idx];
-                    n_alu1_rob_idx = n_int_rs_rob_idx[int_issue0_idx];
-                    n_alu1_has_dest = n_int_rs_has_dest[int_issue0_idx];
-                    n_alu1_dest_phys = n_int_rs_dest_phys[int_issue0_idx];
-                    n_alu1_s1 = n_int_rs_s1_value[int_issue0_idx];
-                    n_alu1_s2 = n_int_rs_s2_value[int_issue0_idx];
-                    n_alu1_s3 = n_int_rs_s3_value[int_issue0_idx];
-                    n_int_rs_valid[int_issue0_idx] = 1'b0;
-                end
+            if (int_issue1_valid) begin
+                n_alu1_s0_valid = 1'b1;
+                n_alu1_s0_opcode = n_int_rs_opcode[int_issue1_idx];
+                n_alu1_s0_alu_op = n_int_rs_alu_op[int_issue1_idx];
+                n_alu1_s0_imm = n_int_rs_imm[int_issue1_idx];
+                n_alu1_s0_pc = n_int_rs_pc[int_issue1_idx];
+                n_alu1_s0_rob_idx = n_int_rs_rob_idx[int_issue1_idx];
+                n_alu1_s0_has_dest = n_int_rs_has_dest[int_issue1_idx];
+                n_alu1_s0_dest_phys = n_int_rs_dest_phys[int_issue1_idx];
+                n_alu1_s0_s1 = n_int_rs_s1_value[int_issue1_idx];
+                n_alu1_s0_s2 = n_int_rs_s2_value[int_issue1_idx];
+                n_alu1_s0_s3 = n_int_rs_s3_value[int_issue1_idx];
+                n_int_rs_valid[int_issue1_idx] = 1'b0;
             end
 
             fp_issue0_valid = 1'b0;
@@ -2081,42 +2243,27 @@ always @(*) begin
                 end
             end
 
-            slot_found = !n_fpu0_valid;
-            blocked = !n_fpu1_valid;
-            if (slot_found && fp_issue0_valid) begin
-                n_fpu0_valid = 1'b1;
-                n_fpu0_opcode = n_fp_rs_opcode[fp_issue0_idx];
-                n_fpu0_fpu_op = n_fp_rs_fpu_op[fp_issue0_idx];
-                n_fpu0_rob_idx = n_fp_rs_rob_idx[fp_issue0_idx];
-                n_fpu0_has_dest = n_fp_rs_has_dest[fp_issue0_idx];
-                n_fpu0_dest_phys = n_fp_rs_dest_phys[fp_issue0_idx];
-                n_fpu0_s1 = n_fp_rs_s1_value[fp_issue0_idx];
-                n_fpu0_s2 = n_fp_rs_s2_value[fp_issue0_idx];
+            if (fp_issue0_valid) begin
+                n_fpu0_s0_valid = 1'b1;
+                n_fpu0_s0_opcode = n_fp_rs_opcode[fp_issue0_idx];
+                n_fpu0_s0_fpu_op = n_fp_rs_fpu_op[fp_issue0_idx];
+                n_fpu0_s0_rob_idx = n_fp_rs_rob_idx[fp_issue0_idx];
+                n_fpu0_s0_has_dest = n_fp_rs_has_dest[fp_issue0_idx];
+                n_fpu0_s0_dest_phys = n_fp_rs_dest_phys[fp_issue0_idx];
+                n_fpu0_s0_s1 = n_fp_rs_s1_value[fp_issue0_idx];
+                n_fpu0_s0_s2 = n_fp_rs_s2_value[fp_issue0_idx];
                 n_fp_rs_valid[fp_issue0_idx] = 1'b0;
             end
-            if (blocked) begin
-                if (slot_found && fp_issue1_valid) begin
-                    n_fpu1_valid = 1'b1;
-                    n_fpu1_opcode = n_fp_rs_opcode[fp_issue1_idx];
-                    n_fpu1_fpu_op = n_fp_rs_fpu_op[fp_issue1_idx];
-                    n_fpu1_rob_idx = n_fp_rs_rob_idx[fp_issue1_idx];
-                    n_fpu1_has_dest = n_fp_rs_has_dest[fp_issue1_idx];
-                    n_fpu1_dest_phys = n_fp_rs_dest_phys[fp_issue1_idx];
-                    n_fpu1_s1 = n_fp_rs_s1_value[fp_issue1_idx];
-                    n_fpu1_s2 = n_fp_rs_s2_value[fp_issue1_idx];
-                    n_fp_rs_valid[fp_issue1_idx] = 1'b0;
-                end
-                else if (!slot_found && fp_issue0_valid) begin
-                    n_fpu1_valid = 1'b1;
-                    n_fpu1_opcode = n_fp_rs_opcode[fp_issue0_idx];
-                    n_fpu1_fpu_op = n_fp_rs_fpu_op[fp_issue0_idx];
-                    n_fpu1_rob_idx = n_fp_rs_rob_idx[fp_issue0_idx];
-                    n_fpu1_has_dest = n_fp_rs_has_dest[fp_issue0_idx];
-                    n_fpu1_dest_phys = n_fp_rs_dest_phys[fp_issue0_idx];
-                    n_fpu1_s1 = n_fp_rs_s1_value[fp_issue0_idx];
-                    n_fpu1_s2 = n_fp_rs_s2_value[fp_issue0_idx];
-                    n_fp_rs_valid[fp_issue0_idx] = 1'b0;
-                end
+            if (fp_issue1_valid) begin
+                n_fpu1_s0_valid = 1'b1;
+                n_fpu1_s0_opcode = n_fp_rs_opcode[fp_issue1_idx];
+                n_fpu1_s0_fpu_op = n_fp_rs_fpu_op[fp_issue1_idx];
+                n_fpu1_s0_rob_idx = n_fp_rs_rob_idx[fp_issue1_idx];
+                n_fpu1_s0_has_dest = n_fp_rs_has_dest[fp_issue1_idx];
+                n_fpu1_s0_dest_phys = n_fp_rs_dest_phys[fp_issue1_idx];
+                n_fpu1_s0_s1 = n_fp_rs_s1_value[fp_issue1_idx];
+                n_fpu1_s0_s2 = n_fp_rs_s2_value[fp_issue1_idx];
+                n_fp_rs_valid[fp_issue1_idx] = 1'b0;
             end
 
             // ------------------------------------------------------------
@@ -2846,6 +2993,30 @@ always @(posedge clk or posedge reset) begin
         rob_tail <= 4'd0;
         rob_count <= 5'd0;
 
+        alu0_s0_valid <= 1'b0;
+        alu0_s0_opcode <= 5'd0;
+        alu0_s0_alu_op <= 5'd0;
+        alu0_s0_imm <= 12'd0;
+        alu0_s0_pc <= 64'd0;
+        alu0_s0_rob_idx <= 4'd0;
+        alu0_s0_has_dest <= 1'b0;
+        alu0_s0_dest_phys <= 6'd0;
+        alu0_s0_s1 <= 64'd0;
+        alu0_s0_s2 <= 64'd0;
+        alu0_s0_s3 <= 64'd0;
+
+        alu0_s1_valid <= 1'b0;
+        alu0_s1_opcode <= 5'd0;
+        alu0_s1_alu_op <= 5'd0;
+        alu0_s1_imm <= 12'd0;
+        alu0_s1_pc <= 64'd0;
+        alu0_s1_rob_idx <= 4'd0;
+        alu0_s1_has_dest <= 1'b0;
+        alu0_s1_dest_phys <= 6'd0;
+        alu0_s1_s1 <= 64'd0;
+        alu0_s1_s2 <= 64'd0;
+        alu0_s1_s3 <= 64'd0;
+
         alu0_valid <= 1'b0;
         alu0_opcode <= 5'd0;
         alu0_alu_op <= 5'd0;
@@ -2857,6 +3028,30 @@ always @(posedge clk or posedge reset) begin
         alu0_s1 <= 64'd0;
         alu0_s2 <= 64'd0;
         alu0_s3 <= 64'd0;
+
+        alu1_s0_valid <= 1'b0;
+        alu1_s0_opcode <= 5'd0;
+        alu1_s0_alu_op <= 5'd0;
+        alu1_s0_imm <= 12'd0;
+        alu1_s0_pc <= 64'd0;
+        alu1_s0_rob_idx <= 4'd0;
+        alu1_s0_has_dest <= 1'b0;
+        alu1_s0_dest_phys <= 6'd0;
+        alu1_s0_s1 <= 64'd0;
+        alu1_s0_s2 <= 64'd0;
+        alu1_s0_s3 <= 64'd0;
+
+        alu1_s1_valid <= 1'b0;
+        alu1_s1_opcode <= 5'd0;
+        alu1_s1_alu_op <= 5'd0;
+        alu1_s1_imm <= 12'd0;
+        alu1_s1_pc <= 64'd0;
+        alu1_s1_rob_idx <= 4'd0;
+        alu1_s1_has_dest <= 1'b0;
+        alu1_s1_dest_phys <= 6'd0;
+        alu1_s1_s1 <= 64'd0;
+        alu1_s1_s2 <= 64'd0;
+        alu1_s1_s3 <= 64'd0;
 
         alu1_valid <= 1'b0;
         alu1_opcode <= 5'd0;
@@ -2870,6 +3065,24 @@ always @(posedge clk or posedge reset) begin
         alu1_s2 <= 64'd0;
         alu1_s3 <= 64'd0;
 
+        fpu0_s0_valid <= 1'b0;
+        fpu0_s0_opcode <= 5'd0;
+        fpu0_s0_fpu_op <= 5'd0;
+        fpu0_s0_rob_idx <= 4'd0;
+        fpu0_s0_has_dest <= 1'b0;
+        fpu0_s0_dest_phys <= 6'd0;
+        fpu0_s0_s1 <= 64'd0;
+        fpu0_s0_s2 <= 64'd0;
+
+        fpu0_s1_valid <= 1'b0;
+        fpu0_s1_opcode <= 5'd0;
+        fpu0_s1_fpu_op <= 5'd0;
+        fpu0_s1_rob_idx <= 4'd0;
+        fpu0_s1_has_dest <= 1'b0;
+        fpu0_s1_dest_phys <= 6'd0;
+        fpu0_s1_s1 <= 64'd0;
+        fpu0_s1_s2 <= 64'd0;
+
         fpu0_valid <= 1'b0;
         fpu0_opcode <= 5'd0;
         fpu0_fpu_op <= 5'd0;
@@ -2878,6 +3091,24 @@ always @(posedge clk or posedge reset) begin
         fpu0_dest_phys <= 6'd0;
         fpu0_s1 <= 64'd0;
         fpu0_s2 <= 64'd0;
+
+        fpu1_s0_valid <= 1'b0;
+        fpu1_s0_opcode <= 5'd0;
+        fpu1_s0_fpu_op <= 5'd0;
+        fpu1_s0_rob_idx <= 4'd0;
+        fpu1_s0_has_dest <= 1'b0;
+        fpu1_s0_dest_phys <= 6'd0;
+        fpu1_s0_s1 <= 64'd0;
+        fpu1_s0_s2 <= 64'd0;
+
+        fpu1_s1_valid <= 1'b0;
+        fpu1_s1_opcode <= 5'd0;
+        fpu1_s1_fpu_op <= 5'd0;
+        fpu1_s1_rob_idx <= 4'd0;
+        fpu1_s1_has_dest <= 1'b0;
+        fpu1_s1_dest_phys <= 6'd0;
+        fpu1_s1_s1 <= 64'd0;
+        fpu1_s1_s2 <= 64'd0;
 
         fpu1_valid <= 1'b0;
         fpu1_opcode <= 5'd0;
@@ -3009,6 +3240,30 @@ always @(posedge clk or posedge reset) begin
         rob_tail <= n_rob_tail;
         rob_count <= n_rob_count;
 
+        alu0_s0_valid <= n_alu0_s0_valid;
+        alu0_s0_opcode <= n_alu0_s0_opcode;
+        alu0_s0_alu_op <= n_alu0_s0_alu_op;
+        alu0_s0_imm <= n_alu0_s0_imm;
+        alu0_s0_pc <= n_alu0_s0_pc;
+        alu0_s0_rob_idx <= n_alu0_s0_rob_idx;
+        alu0_s0_has_dest <= n_alu0_s0_has_dest;
+        alu0_s0_dest_phys <= n_alu0_s0_dest_phys;
+        alu0_s0_s1 <= n_alu0_s0_s1;
+        alu0_s0_s2 <= n_alu0_s0_s2;
+        alu0_s0_s3 <= n_alu0_s0_s3;
+
+        alu0_s1_valid <= n_alu0_s1_valid;
+        alu0_s1_opcode <= n_alu0_s1_opcode;
+        alu0_s1_alu_op <= n_alu0_s1_alu_op;
+        alu0_s1_imm <= n_alu0_s1_imm;
+        alu0_s1_pc <= n_alu0_s1_pc;
+        alu0_s1_rob_idx <= n_alu0_s1_rob_idx;
+        alu0_s1_has_dest <= n_alu0_s1_has_dest;
+        alu0_s1_dest_phys <= n_alu0_s1_dest_phys;
+        alu0_s1_s1 <= n_alu0_s1_s1;
+        alu0_s1_s2 <= n_alu0_s1_s2;
+        alu0_s1_s3 <= n_alu0_s1_s3;
+
         alu0_valid <= n_alu0_valid;
         alu0_opcode <= n_alu0_opcode;
         alu0_alu_op <= n_alu0_alu_op;
@@ -3020,6 +3275,30 @@ always @(posedge clk or posedge reset) begin
         alu0_s1 <= n_alu0_s1;
         alu0_s2 <= n_alu0_s2;
         alu0_s3 <= n_alu0_s3;
+
+        alu1_s0_valid <= n_alu1_s0_valid;
+        alu1_s0_opcode <= n_alu1_s0_opcode;
+        alu1_s0_alu_op <= n_alu1_s0_alu_op;
+        alu1_s0_imm <= n_alu1_s0_imm;
+        alu1_s0_pc <= n_alu1_s0_pc;
+        alu1_s0_rob_idx <= n_alu1_s0_rob_idx;
+        alu1_s0_has_dest <= n_alu1_s0_has_dest;
+        alu1_s0_dest_phys <= n_alu1_s0_dest_phys;
+        alu1_s0_s1 <= n_alu1_s0_s1;
+        alu1_s0_s2 <= n_alu1_s0_s2;
+        alu1_s0_s3 <= n_alu1_s0_s3;
+
+        alu1_s1_valid <= n_alu1_s1_valid;
+        alu1_s1_opcode <= n_alu1_s1_opcode;
+        alu1_s1_alu_op <= n_alu1_s1_alu_op;
+        alu1_s1_imm <= n_alu1_s1_imm;
+        alu1_s1_pc <= n_alu1_s1_pc;
+        alu1_s1_rob_idx <= n_alu1_s1_rob_idx;
+        alu1_s1_has_dest <= n_alu1_s1_has_dest;
+        alu1_s1_dest_phys <= n_alu1_s1_dest_phys;
+        alu1_s1_s1 <= n_alu1_s1_s1;
+        alu1_s1_s2 <= n_alu1_s1_s2;
+        alu1_s1_s3 <= n_alu1_s1_s3;
 
         alu1_valid <= n_alu1_valid;
         alu1_opcode <= n_alu1_opcode;
@@ -3033,6 +3312,24 @@ always @(posedge clk or posedge reset) begin
         alu1_s2 <= n_alu1_s2;
         alu1_s3 <= n_alu1_s3;
 
+        fpu0_s0_valid <= n_fpu0_s0_valid;
+        fpu0_s0_opcode <= n_fpu0_s0_opcode;
+        fpu0_s0_fpu_op <= n_fpu0_s0_fpu_op;
+        fpu0_s0_rob_idx <= n_fpu0_s0_rob_idx;
+        fpu0_s0_has_dest <= n_fpu0_s0_has_dest;
+        fpu0_s0_dest_phys <= n_fpu0_s0_dest_phys;
+        fpu0_s0_s1 <= n_fpu0_s0_s1;
+        fpu0_s0_s2 <= n_fpu0_s0_s2;
+
+        fpu0_s1_valid <= n_fpu0_s1_valid;
+        fpu0_s1_opcode <= n_fpu0_s1_opcode;
+        fpu0_s1_fpu_op <= n_fpu0_s1_fpu_op;
+        fpu0_s1_rob_idx <= n_fpu0_s1_rob_idx;
+        fpu0_s1_has_dest <= n_fpu0_s1_has_dest;
+        fpu0_s1_dest_phys <= n_fpu0_s1_dest_phys;
+        fpu0_s1_s1 <= n_fpu0_s1_s1;
+        fpu0_s1_s2 <= n_fpu0_s1_s2;
+
         fpu0_valid <= n_fpu0_valid;
         fpu0_opcode <= n_fpu0_opcode;
         fpu0_fpu_op <= n_fpu0_fpu_op;
@@ -3041,6 +3338,24 @@ always @(posedge clk or posedge reset) begin
         fpu0_dest_phys <= n_fpu0_dest_phys;
         fpu0_s1 <= n_fpu0_s1;
         fpu0_s2 <= n_fpu0_s2;
+
+        fpu1_s0_valid <= n_fpu1_s0_valid;
+        fpu1_s0_opcode <= n_fpu1_s0_opcode;
+        fpu1_s0_fpu_op <= n_fpu1_s0_fpu_op;
+        fpu1_s0_rob_idx <= n_fpu1_s0_rob_idx;
+        fpu1_s0_has_dest <= n_fpu1_s0_has_dest;
+        fpu1_s0_dest_phys <= n_fpu1_s0_dest_phys;
+        fpu1_s0_s1 <= n_fpu1_s0_s1;
+        fpu1_s0_s2 <= n_fpu1_s0_s2;
+
+        fpu1_s1_valid <= n_fpu1_s1_valid;
+        fpu1_s1_opcode <= n_fpu1_s1_opcode;
+        fpu1_s1_fpu_op <= n_fpu1_s1_fpu_op;
+        fpu1_s1_rob_idx <= n_fpu1_s1_rob_idx;
+        fpu1_s1_has_dest <= n_fpu1_s1_has_dest;
+        fpu1_s1_dest_phys <= n_fpu1_s1_dest_phys;
+        fpu1_s1_s1 <= n_fpu1_s1_s1;
+        fpu1_s1_s2 <= n_fpu1_s1_s2;
 
         fpu1_valid <= n_fpu1_valid;
         fpu1_opcode <= n_fpu1_opcode;
