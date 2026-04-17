@@ -121,10 +121,13 @@ module register_file(
     input clk,
     input reset,
     input [4:0] rd,
+    input [4:0] rd2,
     input [4:0] rs,
     input [4:0] rt,
     input [63:0] write_data,
+    input [63:0] write_data2,
     input reg_write,
+    input reg_write2,
     output [63:0] rd_data,
     output [63:0] rs_data,
     output [63:0] rt_data,
@@ -147,8 +150,11 @@ always @(posedge clk or posedge reset) begin
             registers[i] <= 64'd0;
         registers[31] <= MEM_SIZE;
     end
-    else if (reg_write) begin
-        registers[rd] <= write_data;
+    else begin
+        if (reg_write)
+            registers[rd] <= write_data;
+        if (reg_write2)
+            registers[rd2] <= write_data2;
     end
 end
 
@@ -1084,12 +1090,14 @@ reg cdb_valid [0:4];
 reg [5:0] cdb_tag [0:4];
 reg [63:0] cdb_value [0:4];
 reg [3:0] cdb_rob [0:4];
+reg apply_cdb [0:4];
 reg brcand_valid [0:2];
 reg [3:0] brcand_rob [0:2];
 reg [4:0] brcand_opcode [0:2];
 reg brcand_taken [0:2];
 reg [63:0] brcand_target [0:2];
 reg [63:0] brcand_pc [0:2];
+reg apply_brcand [0:2];
 
 integer i;
 integer j;
@@ -1100,9 +1108,12 @@ integer t;
 reg [63:0] mem_data_addr;
 reg [63:0] mem_write_data;
 reg mem_write_en;
-reg [4:0] arf_commit_rd;
-reg [63:0] arf_commit_data;
-reg arf_commit_write;
+reg [4:0] arf_commit0_rd;
+reg [63:0] arf_commit0_data;
+reg arf_commit0_write;
+reg [4:0] arf_commit1_rd;
+reg [63:0] arf_commit1_data;
+reg arf_commit1_write;
 
 // decode wires for the next two instructions to dispatch
 wire [4:0] d0_opcode, d0_rd, d0_rs, d0_rt;
@@ -1173,11 +1184,14 @@ instruction_decoder dec1(
 register_file reg_file(
     .clk(clk),
     .reset(reset),
-    .rd(arf_commit_rd),
+    .rd(arf_commit0_rd),
+    .rd2(arf_commit1_rd),
     .rs(5'd0),
     .rt(5'd0),
-    .write_data(arf_commit_data),
-    .reg_write(arf_commit_write),
+    .write_data(arf_commit0_data),
+    .write_data2(arf_commit1_data),
+    .reg_write(arf_commit0_write),
+    .reg_write2(arf_commit1_write),
     .rd_data(unused_rd_data),
     .rs_data(unused_rs_data),
     .rt_data(unused_rt_data),
@@ -1283,9 +1297,12 @@ always @(*) begin
     n_hlt = hlt;
     n_fetch_pc = fetch_pc;
 
-    arf_commit_rd = 5'd0;
-    arf_commit_data = 64'd0;
-    arf_commit_write = 1'b0;
+    arf_commit0_rd = 5'd0;
+    arf_commit0_data = 64'd0;
+    arf_commit0_write = 1'b0;
+    arf_commit1_rd = 5'd0;
+    arf_commit1_data = 64'd0;
+    arf_commit1_write = 1'b0;
 
     mem_data_addr = fetch_pc + 64'd4;
     mem_write_data = 64'd0;
@@ -1452,6 +1469,7 @@ always @(*) begin
         cdb_tag[i] = 6'd0;
         cdb_value[i] = 64'd0;
         cdb_rob[i] = 4'd0;
+        apply_cdb[i] = 1'b0;
     end
 
     for (i = 0; i < 3; i = i + 1) begin
@@ -1461,62 +1479,117 @@ always @(*) begin
         brcand_taken[i] = 1'b0;
         brcand_target[i] = 64'd0;
         brcand_pc[i] = 64'd0;
+        apply_brcand[i] = 1'b0;
     end
 
     if (!hlt) begin
         // ------------------------------------------------------------
-        // 1) in-order commit (single-width to keep the architectural RF simple)
+        // 1) in-order commit (up to dual-width; at most one memory write)
         // ------------------------------------------------------------
-        if ((rob_count != 0) && rob_valid[rob_head]) begin
-            if (rob_halt[rob_head] && rob_done[rob_head]) begin
-                n_hlt = 1'b1;
-                n_rob_valid[rob_head] = 1'b0;
-                n_rob_done[rob_head] = 1'b0;
-                n_rob_halt[rob_head] = 1'b0;
-                n_rob_has_dest[rob_head] = 1'b0;
-                n_rob_has_lsq[rob_head] = 1'b0;
-                n_rob_head = rob_inc(rob_head);
-                n_rob_count = rob_count - 5'd1;
-            end
-            else if ((rob_opcode[rob_head] == OP_STORE) && rob_has_lsq[rob_head] && lsq_valid[rob_lsq_idx[rob_head]] && lsq_addr_ready[rob_lsq_idx[rob_head]] && lsq_data_ready[rob_lsq_idx[rob_head]]) begin
-                mem_write_en = 1'b1;
-                mem_data_addr = lsq_addr[rob_lsq_idx[rob_head]];
-                mem_write_data = lsq_data_value[rob_lsq_idx[rob_head]];
-                n_lsq_valid[rob_lsq_idx[rob_head]] = 1'b0;
-                n_rob_valid[rob_head] = 1'b0;
-                n_rob_done[rob_head] = 1'b0;
-                n_rob_has_lsq[rob_head] = 1'b0;
-                n_rob_head = rob_inc(rob_head);
-                n_rob_count = rob_count - 5'd1;
-            end
-            else if ((rob_opcode[rob_head] == OP_CALL) && rob_done[rob_head] && rob_has_lsq[rob_head] && lsq_valid[rob_lsq_idx[rob_head]] && lsq_addr_ready[rob_lsq_idx[rob_head]] && lsq_data_ready[rob_lsq_idx[rob_head]]) begin
-                mem_write_en = 1'b1;
-                mem_data_addr = lsq_addr[rob_lsq_idx[rob_head]];
-                mem_write_data = lsq_data_value[rob_lsq_idx[rob_head]];
-                n_lsq_valid[rob_lsq_idx[rob_head]] = 1'b0;
-                n_rob_valid[rob_head] = 1'b0;
-                n_rob_done[rob_head] = 1'b0;
-                n_rob_has_lsq[rob_head] = 1'b0;
-                n_rob_head = rob_inc(rob_head);
-                n_rob_count = rob_count - 5'd1;
-            end
-            else if (rob_done[rob_head]) begin
-                if (rob_has_dest[rob_head]) begin
-                    arf_commit_write = 1'b1;
-                    arf_commit_rd = rob_arch_dst[rob_head];
-                    arf_commit_data = prf_value[rob_new_phys[rob_head]];
-                    n_phys_free[rob_old_phys[rob_head]] = 1'b1;
+        begin : commit_block
+            reg commit_stop;
+            reg commit_allow_second;
+            reg [3:0] commit_idx;
+
+            commit_stop = 1'b0;
+            commit_allow_second = 1'b0;
+            commit_idx = n_rob_head;
+
+            if ((n_rob_count != 0) && rob_valid[commit_idx]) begin
+                if (rob_halt[commit_idx] && rob_done[commit_idx]) begin
+                    n_hlt = 1'b1;
+                    n_rob_valid[commit_idx] = 1'b0;
+                    n_rob_done[commit_idx] = 1'b0;
+                    n_rob_halt[commit_idx] = 1'b0;
+                    n_rob_has_dest[commit_idx] = 1'b0;
+                    n_rob_has_lsq[commit_idx] = 1'b0;
+                    n_rob_head = rob_inc(commit_idx);
+                    n_rob_count = n_rob_count - 5'd1;
+                    commit_stop = 1'b1;
+                    commit_idx = n_rob_head;
                 end
-                if (rob_has_lsq[rob_head]) begin
-                    n_lsq_valid[rob_lsq_idx[rob_head]] = 1'b0;
+                else if ((rob_opcode[commit_idx] == OP_STORE) && rob_has_lsq[commit_idx] &&
+                         n_lsq_valid[rob_lsq_idx[commit_idx]] && n_lsq_addr_ready[rob_lsq_idx[commit_idx]] &&
+                         n_lsq_data_ready[rob_lsq_idx[commit_idx]]) begin
+                    mem_write_en = 1'b1;
+                    mem_data_addr = n_lsq_addr[rob_lsq_idx[commit_idx]];
+                    mem_write_data = n_lsq_data_value[rob_lsq_idx[commit_idx]];
+                    n_lsq_valid[rob_lsq_idx[commit_idx]] = 1'b0;
+                    n_rob_valid[commit_idx] = 1'b0;
+                    n_rob_done[commit_idx] = 1'b0;
+                    n_rob_has_lsq[commit_idx] = 1'b0;
+                    n_rob_head = rob_inc(commit_idx);
+                    n_rob_count = n_rob_count - 5'd1;
+                    commit_stop = 1'b1;
+                    commit_idx = n_rob_head;
                 end
-                n_rob_valid[rob_head] = 1'b0;
-                n_rob_done[rob_head] = 1'b0;
-                n_rob_halt[rob_head] = 1'b0;
-                n_rob_has_dest[rob_head] = 1'b0;
-                n_rob_has_lsq[rob_head] = 1'b0;
-                n_rob_head = rob_inc(rob_head);
-                n_rob_count = rob_count - 5'd1;
+                else if ((rob_opcode[commit_idx] == OP_CALL) && rob_done[commit_idx] &&
+                         rob_has_lsq[commit_idx] && n_lsq_valid[rob_lsq_idx[commit_idx]] &&
+                         n_lsq_addr_ready[rob_lsq_idx[commit_idx]] && n_lsq_data_ready[rob_lsq_idx[commit_idx]]) begin
+                    mem_write_en = 1'b1;
+                    mem_data_addr = n_lsq_addr[rob_lsq_idx[commit_idx]];
+                    mem_write_data = n_lsq_data_value[rob_lsq_idx[commit_idx]];
+                    n_lsq_valid[rob_lsq_idx[commit_idx]] = 1'b0;
+                    n_rob_valid[commit_idx] = 1'b0;
+                    n_rob_done[commit_idx] = 1'b0;
+                    n_rob_has_lsq[commit_idx] = 1'b0;
+                    n_rob_head = rob_inc(commit_idx);
+                    n_rob_count = n_rob_count - 5'd1;
+                    commit_stop = 1'b1;
+                    commit_idx = n_rob_head;
+                end
+                else if (rob_done[commit_idx]) begin
+                    if (rob_has_dest[commit_idx]) begin
+                        arf_commit0_write = 1'b1;
+                        arf_commit0_rd = rob_arch_dst[commit_idx];
+                        arf_commit0_data = prf_value[rob_new_phys[commit_idx]];
+                        n_phys_free[rob_old_phys[commit_idx]] = 1'b1;
+                    end
+                    if (rob_has_lsq[commit_idx]) begin
+                        n_lsq_valid[rob_lsq_idx[commit_idx]] = 1'b0;
+                    end
+                    n_rob_valid[commit_idx] = 1'b0;
+                    n_rob_done[commit_idx] = 1'b0;
+                    n_rob_halt[commit_idx] = 1'b0;
+                    n_rob_has_dest[commit_idx] = 1'b0;
+                    n_rob_has_lsq[commit_idx] = 1'b0;
+                    n_rob_head = rob_inc(commit_idx);
+                    n_rob_count = n_rob_count - 5'd1;
+                    commit_allow_second = 1'b1;
+                    commit_idx = n_rob_head;
+                end
+            end
+
+            if (commit_allow_second && !commit_stop && (n_rob_count != 0) && rob_valid[commit_idx]) begin
+                if (rob_halt[commit_idx] && rob_done[commit_idx]) begin
+                    n_hlt = 1'b1;
+                    n_rob_valid[commit_idx] = 1'b0;
+                    n_rob_done[commit_idx] = 1'b0;
+                    n_rob_halt[commit_idx] = 1'b0;
+                    n_rob_has_dest[commit_idx] = 1'b0;
+                    n_rob_has_lsq[commit_idx] = 1'b0;
+                    n_rob_head = rob_inc(commit_idx);
+                    n_rob_count = n_rob_count - 5'd1;
+                end
+                else if ((rob_opcode[commit_idx] != OP_STORE) && (rob_opcode[commit_idx] != OP_CALL) &&
+                         rob_done[commit_idx]) begin
+                    if (rob_has_dest[commit_idx]) begin
+                        arf_commit1_write = 1'b1;
+                        arf_commit1_rd = rob_arch_dst[commit_idx];
+                        arf_commit1_data = prf_value[rob_new_phys[commit_idx]];
+                        n_phys_free[rob_old_phys[commit_idx]] = 1'b1;
+                    end
+                    if (rob_has_lsq[commit_idx]) begin
+                        n_lsq_valid[rob_lsq_idx[commit_idx]] = 1'b0;
+                    end
+                    n_rob_valid[commit_idx] = 1'b0;
+                    n_rob_done[commit_idx] = 1'b0;
+                    n_rob_halt[commit_idx] = 1'b0;
+                    n_rob_has_dest[commit_idx] = 1'b0;
+                    n_rob_has_lsq[commit_idx] = 1'b0;
+                    n_rob_head = rob_inc(commit_idx);
+                    n_rob_count = n_rob_count - 5'd1;
+                end
             end
         end
 
@@ -1647,21 +1720,63 @@ always @(*) begin
                 brcand_taken[2] = 1'b1;
                 brcand_target[2] = ld_value;
                 brcand_pc[2] = rob_pc[ld_rob_idx];
-                n_lsq_done[ld_lsq_idx] = 1'b1;
             end
             else if (ld_has_dest) begin
                 cdb_valid[4] = 1'b1;
                 cdb_tag[4] = ld_dest_phys;
                 cdb_value[4] = ld_value;
                 cdb_rob[4] = ld_rob_idx;
-                n_lsq_done[ld_lsq_idx] = 1'b1;
             end
             n_ld_valid = 1'b0;
         end
 
-        // write CDB results into PRF / ROB and wake up queues
+        // determine the oldest mispredicted control instruction from raw completions
+        mispredict_valid = 1'b0;
+        mispredict_rob = 4'd0;
+        mispredict_target = 64'd0;
+        k = n_rob_head;
+        for (t = 0; t < ROB_SIZE; t = t + 1) begin
+            if (n_rob_valid[k]) begin
+                for (i = 0; i < 3; i = i + 1) begin
+                    if (!mispredict_valid && brcand_valid[i] && (brcand_rob[i] == k)) begin
+                        if ((n_rob_pred_taken[k] != brcand_taken[i]) ||
+                            (n_rob_pred_taken[k] && brcand_taken[i] &&
+                             (n_rob_pred_target[k] != brcand_target[i]))) begin
+                            mispredict_valid = 1'b1;
+                            mispredict_rob = k;
+                            if (brcand_taken[i])
+                                mispredict_target = brcand_target[i];
+                            else
+                                mispredict_target = brcand_pc[i] + 64'd4;
+                        end
+                    end
+                end
+            end
+            k = rob_inc(k[3:0]);
+        end
+
+        if (mispredict_valid) begin
+            k = n_rob_head;
+            j = 0;
+            for (t = 0; t < ROB_SIZE; t = t + 1) begin
+                if (n_rob_valid[k] && (j == 0))
+                    keep_rob[k] = 1'b1;
+                if (k == mispredict_rob)
+                    j = 1;
+                k = rob_inc(k[3:0]);
+            end
+        end
+
         for (i = 0; i < 5; i = i + 1) begin
-            if (cdb_valid[i]) begin
+            apply_cdb[i] = cdb_valid[i] && (!mispredict_valid || keep_rob[cdb_rob[i]]);
+        end
+        for (i = 0; i < 3; i = i + 1) begin
+            apply_brcand[i] = brcand_valid[i] && (!mispredict_valid || keep_rob[brcand_rob[i]]);
+        end
+
+        // write masked CDB results into PRF / ROB and wake up queues
+        for (i = 0; i < 5; i = i + 1) begin
+            if (apply_cdb[i]) begin
                 n_prf_value[cdb_tag[i]] = cdb_value[i];
                 n_prf_ready[cdb_tag[i]] = 1'b1;
                 n_rob_done[cdb_rob[i]] = 1'b1;
@@ -1671,15 +1786,15 @@ always @(*) begin
         for (i = 0; i < INT_RS_SIZE; i = i + 1) begin
             if (n_int_rs_valid[i]) begin
                 for (j = 0; j < 5; j = j + 1) begin
-                    if (cdb_valid[j] && !n_int_rs_s1_ready[i] && (n_int_rs_s1_tag[i] == cdb_tag[j])) begin
+                    if (apply_cdb[j] && !n_int_rs_s1_ready[i] && (n_int_rs_s1_tag[i] == cdb_tag[j])) begin
                         n_int_rs_s1_ready[i] = 1'b1;
                         n_int_rs_s1_value[i] = cdb_value[j];
                     end
-                    if (cdb_valid[j] && !n_int_rs_s2_ready[i] && (n_int_rs_s2_tag[i] == cdb_tag[j])) begin
+                    if (apply_cdb[j] && !n_int_rs_s2_ready[i] && (n_int_rs_s2_tag[i] == cdb_tag[j])) begin
                         n_int_rs_s2_ready[i] = 1'b1;
                         n_int_rs_s2_value[i] = cdb_value[j];
                     end
-                    if (cdb_valid[j] && !n_int_rs_s3_ready[i] && (n_int_rs_s3_tag[i] == cdb_tag[j])) begin
+                    if (apply_cdb[j] && !n_int_rs_s3_ready[i] && (n_int_rs_s3_tag[i] == cdb_tag[j])) begin
                         n_int_rs_s3_ready[i] = 1'b1;
                         n_int_rs_s3_value[i] = cdb_value[j];
                     end
@@ -1690,11 +1805,11 @@ always @(*) begin
         for (i = 0; i < FP_RS_SIZE; i = i + 1) begin
             if (n_fp_rs_valid[i]) begin
                 for (j = 0; j < 5; j = j + 1) begin
-                    if (cdb_valid[j] && !n_fp_rs_s1_ready[i] && (n_fp_rs_s1_tag[i] == cdb_tag[j])) begin
+                    if (apply_cdb[j] && !n_fp_rs_s1_ready[i] && (n_fp_rs_s1_tag[i] == cdb_tag[j])) begin
                         n_fp_rs_s1_ready[i] = 1'b1;
                         n_fp_rs_s1_value[i] = cdb_value[j];
                     end
-                    if (cdb_valid[j] && !n_fp_rs_s2_ready[i] && (n_fp_rs_s2_tag[i] == cdb_tag[j])) begin
+                    if (apply_cdb[j] && !n_fp_rs_s2_ready[i] && (n_fp_rs_s2_tag[i] == cdb_tag[j])) begin
                         n_fp_rs_s2_ready[i] = 1'b1;
                         n_fp_rs_s2_value[i] = cdb_value[j];
                     end
@@ -1705,11 +1820,11 @@ always @(*) begin
         for (i = 0; i < LSQ_SIZE; i = i + 1) begin
             if (n_lsq_valid[i]) begin
                 for (j = 0; j < 5; j = j + 1) begin
-                    if (cdb_valid[j] && !n_lsq_base_ready[i] && (n_lsq_base_tag[i] == cdb_tag[j])) begin
+                    if (apply_cdb[j] && !n_lsq_base_ready[i] && (n_lsq_base_tag[i] == cdb_tag[j])) begin
                         n_lsq_base_ready[i] = 1'b1;
                         n_lsq_base_value[i] = cdb_value[j];
                     end
-                    if (cdb_valid[j] && !n_lsq_data_ready[i] && (n_lsq_data_tag[i] == cdb_tag[j])) begin
+                    if (apply_cdb[j] && !n_lsq_data_ready[i] && (n_lsq_data_tag[i] == cdb_tag[j])) begin
                         n_lsq_data_ready[i] = 1'b1;
                         n_lsq_data_value[i] = cdb_value[j];
                     end
@@ -1717,7 +1832,14 @@ always @(*) begin
             end
         end
 
-        // LSQ address generation after wakeup
+        if (ld_valid) begin
+            if ((ld_opcode == OP_RET) && apply_brcand[2])
+                n_lsq_done[ld_lsq_idx] = 1'b1;
+            else if (ld_has_dest && apply_cdb[4])
+                n_lsq_done[ld_lsq_idx] = 1'b1;
+        end
+
+        // LSQ address generation after masked wakeup
         for (i = 0; i < LSQ_SIZE; i = i + 1) begin
             if (n_lsq_valid[i] && !n_lsq_addr_ready[i] && n_lsq_base_ready[i]) begin
                 n_lsq_addr_ready[i] = 1'b1;
@@ -1728,13 +1850,9 @@ always @(*) begin
             end
         end
 
-        // branch predictor update + actual branch state capture
-        mispredict_valid = 1'b0;
-        mispredict_rob = 4'd0;
-        mispredict_target = 64'd0;
-
+        // branch predictor update + actual branch state capture for kept completions
         for (i = 0; i < 3; i = i + 1) begin
-            if (brcand_valid[i]) begin
+            if (apply_brcand[i]) begin
                 n_rob_done[brcand_rob[i]] = 1'b1;
                 n_rob_branch_taken[brcand_rob[i]] = brcand_taken[i];
                 n_rob_branch_target[brcand_rob[i]] = brcand_target[i];
@@ -1757,39 +1875,7 @@ always @(*) begin
             end
         end
 
-        // choose the oldest mispredicted control instruction that completed this cycle
-        k = n_rob_head;
-        for (t = 0; t < ROB_SIZE; t = t + 1) begin
-            if (n_rob_valid[k]) begin
-                for (i = 0; i < 3; i = i + 1) begin
-                    if (!mispredict_valid && brcand_valid[i] && (brcand_rob[i] == k)) begin
-                        if ((n_rob_pred_taken[k] != brcand_taken[i]) ||
-                            (n_rob_pred_taken[k] && brcand_taken[i] && (n_rob_pred_target[k] != brcand_target[i]))) begin
-                            mispredict_valid = 1'b1;
-                            mispredict_rob = k;
-                            if (brcand_taken[i])
-                                mispredict_target = brcand_target[i];
-                            else
-                                mispredict_target = brcand_pc[i] + 64'd4;
-                        end
-                    end
-                end
-            end
-            k = rob_inc(k[3:0]);
-        end
-
         if (mispredict_valid) begin
-            k = n_rob_head;
-            j = 0;
-            for (t = 0; t < ROB_SIZE; t = t + 1) begin
-                if (n_rob_valid[k] && (j == 0)) begin
-                    keep_rob[k] = 1'b1;
-                end
-                if (k == mispredict_rob)
-                    j = 1;
-                k = rob_inc(k[3:0]);
-            end
-
             for (i = 0; i < ARCH_REGS; i = i + 1) begin
                 n_rat[i] = n_rob_chk_rat[mispredict_rob][i];
             end
