@@ -1549,7 +1549,8 @@ always @(*) begin
                         arf_commit0_write = 1'b1;
                         arf_commit0_rd = n_rob_arch_dst[commit_idx];
                         arf_commit0_data = n_prf_value[commit_phys];
-                        n_phys_free[commit_old_phys] = 1'b1;
+                        if (commit_old_phys >= ARCH_REGS)
+                            n_phys_free[commit_old_phys] = 1'b1;
                     end
                     if (n_rob_has_lsq[commit_idx]) begin
                         n_lsq_valid[n_rob_lsq_idx[commit_idx]] = 1'b0;
@@ -1585,7 +1586,8 @@ always @(*) begin
                         arf_commit1_write = 1'b1;
                         arf_commit1_rd = n_rob_arch_dst[commit_idx];
                         arf_commit1_data = n_prf_value[commit_phys];
-                        n_phys_free[commit_old_phys] = 1'b1;
+                        if (commit_old_phys >= ARCH_REGS)
+                            n_phys_free[commit_old_phys] = 1'b1;
                     end
                     if (n_rob_has_lsq[commit_idx]) begin
                         n_lsq_valid[n_rob_lsq_idx[commit_idx]] = 1'b0;
@@ -1952,7 +1954,10 @@ always @(*) begin
                     used_phys[n_rob_old_phys[i]] = 1'b1;
             end
             for (i = 0; i < PHYS_SIZE; i = i + 1) begin
-                n_phys_free[i] = !used_phys[i];
+                if (i < ARCH_REGS)
+                    n_phys_free[i] = 1'b0;
+                else
+                    n_phys_free[i] = !used_phys[i];
             end
 
             n_fetch_pc = mispredict_target;
