@@ -214,29 +214,439 @@ localparam [4:0] OP_SUBF = 5'h15;
 localparam [4:0] OP_MULF = 5'h16;
 localparam [4:0] OP_DIVF = 5'h17;
 
-real ra;
-real rb;
-real rr;
+function is_nan64;
+    input [63:0] x;
+    begin
+        is_nan64 = (&x[62:52]) && (|x[51:0]);
+    end
+endfunction
+
+function is_inf64;
+    input [63:0] x;
+    begin
+        is_inf64 = (&x[62:52]) && (~|x[51:0]);
+    end
+endfunction
+
+function is_zero64;
+    input [63:0] x;
+    begin
+        is_zero64 = ~|x[62:0];
+    end
+endfunction
+
+function [63:0] qnan64;
+    begin
+        qnan64 = 64'h7ff8000000000000;
+    end
+endfunction
+
+function [55:0] rshift_sticky56;
+    input [55:0] value;
+    input integer sh;
+    reg [55:0] temp;
+    reg sticky;
+    integer i;
+    begin
+        temp = value;
+        if (sh <= 0) begin
+            temp = value;
+        end
+        else if (sh >= 56) begin
+            temp = 56'd0;
+            temp[0] = |value;
+        end
+        else begin
+            sticky = 1'b0;
+            for (i = 0; i < 56; i = i + 1) begin
+                if ((i < sh) && value[i])
+                    sticky = 1'b1;
+            end
+            temp = value >> sh;
+            temp[0] = temp[0] | sticky;
+        end
+        rshift_sticky56 = temp;
+    end
+endfunction
+
+function [63:0] pack_round64;
+    input sign_in;
+    input integer exp_unb_in;
+    input [55:0] sig_in;
+    reg [55:0] sig;
+    reg [53:0] sig54;
+    reg [10:0] exp_field;
+    integer exp_unb;
+    integer sh;
+    begin
+        sig = sig_in;
+        exp_unb = exp_unb_in;
+
+        if (sig[55:3] == 53'd0) begin
+            pack_round64 = {sign_in, 63'd0};
+        end
+        else begin
+            if (exp_unb < -1022) begin
+                sh = -1022 - exp_unb;
+                sig = rshift_sticky56(sig, sh);
+                exp_unb = -1022;
+            end
+
+            sig54 = {1'b0, sig[55:3]};
+            if (sig[2] && (sig[1] || sig[0] || sig[3]))
+                sig54 = sig54 + 54'd1;
+
+            if (sig54[53]) begin
+                sig54 = {1'b0, sig54[53:1]};
+                exp_unb = exp_unb + 1;
+            end
+
+            if (sig54[52:0] == 53'd0) begin
+                pack_round64 = {sign_in, 63'd0};
+            end
+            else if (exp_unb > 1023) begin
+                pack_round64 = {sign_in, 11'h7ff, 52'd0};
+            end
+            else if ((exp_unb > -1022) || ((exp_unb == -1022) && sig54[52])) begin
+                exp_field = exp_unb + 1023;
+                pack_round64 = {sign_in, exp_field, sig54[51:0]};
+            end
+            else begin
+                pack_round64 = {sign_in, 11'd0, sig54[51:0]};
+            end
+        end
+    end
+endfunction
+
+function [63:0] fp_addsub64;
+    input [63:0] opa;
+    input [63:0] opb;
+    input do_sub;
+    reg sign_a;
+    reg sign_b;
+    reg sign_r;
+    reg [10:0] exp_a_field;
+    reg [10:0] exp_b_field;
+    reg [51:0] frac_a;
+    reg [51:0] frac_b;
+    reg [55:0] sig_a;
+    reg [55:0] sig_b;
+    reg [55:0] sig_big;
+    reg [55:0] sig_small;
+    reg [55:0] sig_r;
+    reg [56:0] sig_sum;
+    reg a_bigger;
+    integer exp_a;
+    integer exp_b;
+    integer exp_big;
+    integer exp_r;
+    integer sh;
+    integer i;
+    begin
+        sign_a = opa[63];
+        sign_b = opb[63] ^ do_sub;
+        exp_a_field = opa[62:52];
+        exp_b_field = opb[62:52];
+        frac_a = opa[51:0];
+        frac_b = opb[51:0];
+
+        if (is_nan64(opa) || is_nan64(opb)) begin
+            fp_addsub64 = qnan64();
+        end
+        else if (is_inf64(opa) && is_inf64(opb) && (sign_a != sign_b)) begin
+            fp_addsub64 = qnan64();
+        end
+        else if (is_inf64(opa)) begin
+            fp_addsub64 = {sign_a, 11'h7ff, 52'd0};
+        end
+        else if (is_inf64(opb)) begin
+            fp_addsub64 = {sign_b, 11'h7ff, 52'd0};
+        end
+        else if (is_zero64(opa) && is_zero64(opb)) begin
+            fp_addsub64 = 64'd0;
+        end
+        else begin
+            if (exp_a_field == 11'd0) begin
+                exp_a = -1022;
+                sig_a = {1'b0, frac_a, 3'b000};
+            end
+            else begin
+                exp_a = exp_a_field - 1023;
+                sig_a = {1'b1, frac_a, 3'b000};
+            end
+
+            if (exp_b_field == 11'd0) begin
+                exp_b = -1022;
+                sig_b = {1'b0, frac_b, 3'b000};
+            end
+            else begin
+                exp_b = exp_b_field - 1023;
+                sig_b = {1'b1, frac_b, 3'b000};
+            end
+
+            if ((exp_a > exp_b) || ((exp_a == exp_b) && (sig_a >= sig_b)))
+                a_bigger = 1'b1;
+            else
+                a_bigger = 1'b0;
+
+            if (a_bigger) begin
+                sig_big = sig_a;
+                sig_small = sig_b;
+                exp_big = exp_a;
+                sign_r = sign_a;
+            end
+            else begin
+                sig_big = sig_b;
+                sig_small = sig_a;
+                exp_big = exp_b;
+                sign_r = sign_b;
+            end
+
+            sh = exp_a - exp_b;
+            if (sh < 0)
+                sh = -sh;
+            sig_small = rshift_sticky56(sig_small, sh);
+
+            if (sign_a == sign_b) begin
+                sig_sum = {1'b0, sig_big} + {1'b0, sig_small};
+                exp_r = exp_big;
+                if (sig_sum[56]) begin
+                    sig_r = sig_sum[56:1];
+                    sig_r[0] = sig_r[0] | sig_sum[0];
+                    exp_r = exp_r + 1;
+                end
+                else begin
+                    sig_r = sig_sum[55:0];
+                end
+                fp_addsub64 = pack_round64(sign_r, exp_r, sig_r);
+            end
+            else begin
+                sig_r = sig_big - sig_small;
+                exp_r = exp_big;
+                if (sig_r == 56'd0) begin
+                    fp_addsub64 = 64'd0;
+                end
+                else begin
+                    for (i = 0; i < 56; i = i + 1) begin
+                        if (sig_r[55] == 1'b0) begin
+                            sig_r = sig_r << 1;
+                            exp_r = exp_r - 1;
+                        end
+                    end
+                    fp_addsub64 = pack_round64(sign_r, exp_r, sig_r);
+                end
+            end
+        end
+    end
+endfunction
+
+function [63:0] fp_mul64;
+    input [63:0] opa;
+    input [63:0] opb;
+    reg sign_r;
+    reg [10:0] exp_a_field;
+    reg [10:0] exp_b_field;
+    reg [51:0] frac_a;
+    reg [51:0] frac_b;
+    reg [52:0] sig_a;
+    reg [52:0] sig_b;
+    reg [105:0] prod;
+    reg [105:0] shifted;
+    reg [55:0] sig_r;
+    reg sticky;
+    integer exp_a;
+    integer exp_b;
+    integer exp_r;
+    integer lead;
+    integer sh;
+    integer i;
+    begin
+        sign_r = opa[63] ^ opb[63];
+        exp_a_field = opa[62:52];
+        exp_b_field = opb[62:52];
+        frac_a = opa[51:0];
+        frac_b = opb[51:0];
+
+        if (is_nan64(opa) || is_nan64(opb)) begin
+            fp_mul64 = qnan64();
+        end
+        else if ((is_inf64(opa) && is_zero64(opb)) || (is_zero64(opa) && is_inf64(opb))) begin
+            fp_mul64 = qnan64();
+        end
+        else if (is_inf64(opa) || is_inf64(opb)) begin
+            fp_mul64 = {sign_r, 11'h7ff, 52'd0};
+        end
+        else if (is_zero64(opa) || is_zero64(opb)) begin
+            fp_mul64 = {sign_r, 63'd0};
+        end
+        else begin
+            if (exp_a_field == 11'd0) begin
+                exp_a = -1022;
+                sig_a = {1'b0, frac_a};
+            end
+            else begin
+                exp_a = exp_a_field - 1023;
+                sig_a = {1'b1, frac_a};
+            end
+
+            if (exp_b_field == 11'd0) begin
+                exp_b = -1022;
+                sig_b = {1'b0, frac_b};
+            end
+            else begin
+                exp_b = exp_b_field - 1023;
+                sig_b = {1'b1, frac_b};
+            end
+
+            prod = sig_a * sig_b;
+            if (prod == 106'd0) begin
+                fp_mul64 = {sign_r, 63'd0};
+            end
+            else begin
+                lead = 0;
+                for (i = 0; i < 106; i = i + 1) begin
+                    if (prod[i])
+                        lead = i;
+                end
+
+                exp_r = exp_a + exp_b + (lead - 104);
+                shifted = prod;
+                sticky = 1'b0;
+
+                if (lead > 104) begin
+                    sh = lead - 104;
+                    shifted = prod >> sh;
+                    for (i = 0; i < 106; i = i + 1) begin
+                        if ((i < sh) && prod[i])
+                            sticky = 1'b1;
+                    end
+                end
+                else if (lead < 104) begin
+                    shifted = prod << (104 - lead);
+                end
+
+                sig_r[55:3] = shifted[104:52];
+                sig_r[2] = shifted[51];
+                sig_r[1] = shifted[50];
+                sig_r[0] = sticky | (|shifted[49:0]);
+                fp_mul64 = pack_round64(sign_r, exp_r, sig_r);
+            end
+        end
+    end
+endfunction
+
+function [63:0] fp_div64;
+    input [63:0] opa;
+    input [63:0] opb;
+    reg sign_r;
+    reg [10:0] exp_a_field;
+    reg [10:0] exp_b_field;
+    reg [51:0] frac_a;
+    reg [51:0] frac_b;
+    reg [52:0] sig_a;
+    reg [52:0] sig_b;
+    reg [107:0] numer;
+    reg [107:0] quot;
+    reg [107:0] remd;
+    reg [107:0] shifted;
+    reg [55:0] sig_r;
+    reg sticky;
+    integer exp_a;
+    integer exp_b;
+    integer exp_r;
+    integer lead;
+    integer sh;
+    integer i;
+    begin
+        sign_r = opa[63] ^ opb[63];
+        exp_a_field = opa[62:52];
+        exp_b_field = opb[62:52];
+        frac_a = opa[51:0];
+        frac_b = opb[51:0];
+
+        if (is_nan64(opa) || is_nan64(opb)) begin
+            fp_div64 = qnan64();
+        end
+        else if ((is_zero64(opa) && is_zero64(opb)) || (is_inf64(opa) && is_inf64(opb))) begin
+            fp_div64 = qnan64();
+        end
+        else if (is_inf64(opa)) begin
+            fp_div64 = {sign_r, 11'h7ff, 52'd0};
+        end
+        else if (is_inf64(opb)) begin
+            fp_div64 = {sign_r, 63'd0};
+        end
+        else if (is_zero64(opb)) begin
+            fp_div64 = {sign_r, 11'h7ff, 52'd0};
+        end
+        else if (is_zero64(opa)) begin
+            fp_div64 = {sign_r, 63'd0};
+        end
+        else begin
+            if (exp_a_field == 11'd0) begin
+                exp_a = -1022;
+                sig_a = {1'b0, frac_a};
+            end
+            else begin
+                exp_a = exp_a_field - 1023;
+                sig_a = {1'b1, frac_a};
+            end
+
+            if (exp_b_field == 11'd0) begin
+                exp_b = -1022;
+                sig_b = {1'b0, frac_b};
+            end
+            else begin
+                exp_b = exp_b_field - 1023;
+                sig_b = {1'b1, frac_b};
+            end
+
+            numer = {sig_a, 55'd0};
+            quot = numer / sig_b;
+            remd = numer % sig_b;
+
+            if (quot == 108'd0) begin
+                fp_div64 = {sign_r, 63'd0};
+            end
+            else begin
+                lead = 0;
+                for (i = 0; i < 108; i = i + 1) begin
+                    if (quot[i])
+                        lead = i;
+                end
+
+                exp_r = exp_a - exp_b + (lead - 55);
+                shifted = quot;
+                sticky = (remd != 108'd0);
+
+                if (lead > 55) begin
+                    sh = lead - 55;
+                    shifted = quot >> sh;
+                    for (i = 0; i < 108; i = i + 1) begin
+                        if ((i < sh) && quot[i])
+                            sticky = 1'b1;
+                    end
+                end
+                else if (lead < 55) begin
+                    shifted = quot << (55 - lead);
+                end
+
+                sig_r = shifted[55:0];
+                sig_r[0] = sig_r[0] | sticky;
+                fp_div64 = pack_round64(sign_r, exp_r, sig_r);
+            end
+        end
+    end
+endfunction
 
 always @(*) begin
-    ra = $bitstoreal(a);
-    rb = $bitstoreal(b);
-    rr = 0.0;
-
     case (fpu_op)
-        OP_ADDF: rr = ra + rb;
-        OP_SUBF: rr = ra - rb;
-        OP_MULF: rr = ra * rb;
-        OP_DIVF: begin
-            if (rb == 0.0)
-                rr = 0.0;
-            else
-                rr = ra / rb;
-        end
-        default: rr = 0.0;
+        OP_ADDF: result = fp_addsub64(a, b, 1'b0);
+        OP_SUBF: result = fp_addsub64(a, b, 1'b1);
+        OP_MULF: result = fp_mul64(a, b);
+        OP_DIVF: result = fp_div64(a, b);
+        default: result = 64'd0;
     endcase
-
-    result = $realtobits(rr);
 end
 
 endmodule
@@ -813,6 +1223,30 @@ memory memory(
     .data_read(memory_data_read)
 );
 
+task read_arch_source;
+    input [4:0] arch;
+    output ready;
+    output [63:0] value;
+    output [5:0] tag;
+    begin
+        if (n_rat[arch] == {1'b0, arch}) begin
+            ready = 1'b1;
+            value = reg_file.registers[arch];
+            tag = 6'd0;
+        end
+        else if (n_prf_ready[n_rat[arch]]) begin
+            ready = 1'b1;
+            value = n_prf_value[n_rat[arch]];
+            tag = 6'd0;
+        end
+        else begin
+            ready = 1'b0;
+            value = 64'd0;
+            tag = n_rat[arch];
+        end
+    end
+endtask
+
 
 reg mispredict_valid;
 reg [3:0] mispredict_rob;
@@ -936,16 +1370,6 @@ always @(*) begin
         n_prf_ready[i] = prf_ready[i];
         n_phys_free[i] = phys_free[i];
         used_phys[i] = 1'b0;
-    end
-
-    // Keep identity-mapped architectural registers coherent with the
-    // architectural register file state the testbench initializes.
-    for (i = 0; i < ARCH_REGS; i = i + 1) begin
-        if (n_rat[i] == i[5:0]) begin
-            n_prf_value[i] = reg_file.registers[i];
-            n_prf_ready[i] = 1'b1;
-            n_phys_free[i] = 1'b0;
-        end
     end
 
     for (i = 0; i < ROB_SIZE; i = i + 1) begin
@@ -1774,100 +2198,60 @@ always @(*) begin
                     n_int_rs_s3_tag[alloc_int_rs] = 6'd0;
                     case (d0_opcode)
                         OP_NOT, OP_MOV_RR: begin
-                            if (n_prf_ready[n_rat[d0_rs]]) begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s1_value[alloc_int_rs] = n_prf_value[n_rat[d0_rs]];
-                            end
-                            else begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s1_tag[alloc_int_rs] = n_rat[d0_rs];
-                            end
+                            read_arch_source(d0_rs,
+                                             n_int_rs_s1_ready[alloc_int_rs],
+                                             n_int_rs_s1_value[alloc_int_rs],
+                                             n_int_rs_s1_tag[alloc_int_rs]);
                         end
                         OP_SHRI, OP_SHLI, OP_MOVI, OP_ADDI, OP_SUBI: begin
-                            if (n_prf_ready[n_rat[d0_rd]]) begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s1_value[alloc_int_rs] = n_prf_value[n_rat[d0_rd]];
-                            end
-                            else begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s1_tag[alloc_int_rs] = n_rat[d0_rd];
-                            end
+                            read_arch_source(d0_rd,
+                                             n_int_rs_s1_ready[alloc_int_rs],
+                                             n_int_rs_s1_value[alloc_int_rs],
+                                             n_int_rs_s1_tag[alloc_int_rs]);
                             n_int_rs_s2_ready[alloc_int_rs] = 1'b1;
                             n_int_rs_s2_value[alloc_int_rs] = zext12(d0_L);
                         end
                         OP_BR_ABS, OP_BR_RREG, OP_CALL: begin
-                            if (n_prf_ready[n_rat[d0_rd]]) begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s3_value[alloc_int_rs] = n_prf_value[n_rat[d0_rd]];
-                            end
-                            else begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s3_tag[alloc_int_rs] = n_rat[d0_rd];
-                            end
+                            read_arch_source(d0_rd,
+                                             n_int_rs_s3_ready[alloc_int_rs],
+                                             n_int_rs_s3_value[alloc_int_rs],
+                                             n_int_rs_s3_tag[alloc_int_rs]);
                         end
                         OP_BR_RLIT: begin
                         end
                         OP_BR_NZ: begin
-                            if (n_prf_ready[n_rat[d0_rs]]) begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s1_value[alloc_int_rs] = n_prf_value[n_rat[d0_rs]];
-                            end
-                            else begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s1_tag[alloc_int_rs] = n_rat[d0_rs];
-                            end
-                            if (n_prf_ready[n_rat[d0_rd]]) begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s3_value[alloc_int_rs] = n_prf_value[n_rat[d0_rd]];
-                            end
-                            else begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s3_tag[alloc_int_rs] = n_rat[d0_rd];
-                            end
+                            read_arch_source(d0_rs,
+                                             n_int_rs_s1_ready[alloc_int_rs],
+                                             n_int_rs_s1_value[alloc_int_rs],
+                                             n_int_rs_s1_tag[alloc_int_rs]);
+                            read_arch_source(d0_rd,
+                                             n_int_rs_s3_ready[alloc_int_rs],
+                                             n_int_rs_s3_value[alloc_int_rs],
+                                             n_int_rs_s3_tag[alloc_int_rs]);
                         end
                         OP_BR_GT: begin
-                            if (n_prf_ready[n_rat[d0_rs]]) begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s1_value[alloc_int_rs] = n_prf_value[n_rat[d0_rs]];
-                            end
-                            else begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s1_tag[alloc_int_rs] = n_rat[d0_rs];
-                            end
-                            if (n_prf_ready[n_rat[d0_rt]]) begin
-                                n_int_rs_s2_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s2_value[alloc_int_rs] = n_prf_value[n_rat[d0_rt]];
-                            end
-                            else begin
-                                n_int_rs_s2_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s2_tag[alloc_int_rs] = n_rat[d0_rt];
-                            end
-                            if (n_prf_ready[n_rat[d0_rd]]) begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s3_value[alloc_int_rs] = n_prf_value[n_rat[d0_rd]];
-                            end
-                            else begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s3_tag[alloc_int_rs] = n_rat[d0_rd];
-                            end
+                            read_arch_source(d0_rs,
+                                             n_int_rs_s1_ready[alloc_int_rs],
+                                             n_int_rs_s1_value[alloc_int_rs],
+                                             n_int_rs_s1_tag[alloc_int_rs]);
+                            read_arch_source(d0_rt,
+                                             n_int_rs_s2_ready[alloc_int_rs],
+                                             n_int_rs_s2_value[alloc_int_rs],
+                                             n_int_rs_s2_tag[alloc_int_rs]);
+                            read_arch_source(d0_rd,
+                                             n_int_rs_s3_ready[alloc_int_rs],
+                                             n_int_rs_s3_value[alloc_int_rs],
+                                             n_int_rs_s3_tag[alloc_int_rs]);
                         end
                         default: begin
-                            if (n_prf_ready[n_rat[d0_rs]]) begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s1_value[alloc_int_rs] = n_prf_value[n_rat[d0_rs]];
-                            end
-                            else begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s1_tag[alloc_int_rs] = n_rat[d0_rs];
-                            end
-                            if (n_prf_ready[n_rat[d0_rt]]) begin
-                                n_int_rs_s2_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s2_value[alloc_int_rs] = n_prf_value[n_rat[d0_rt]];
-                            end
-                            else begin
-                                n_int_rs_s2_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s2_tag[alloc_int_rs] = n_rat[d0_rt];
-                            end
+                            read_arch_source(d0_rs,
+                                             n_int_rs_s1_ready[alloc_int_rs],
+                                             n_int_rs_s1_value[alloc_int_rs],
+                                             n_int_rs_s1_tag[alloc_int_rs]);
+                            read_arch_source(d0_rt,
+                                             n_int_rs_s2_ready[alloc_int_rs],
+                                             n_int_rs_s2_value[alloc_int_rs],
+                                             n_int_rs_s2_tag[alloc_int_rs]);
                         end
                     endcase
                 end
@@ -1879,26 +2263,14 @@ always @(*) begin
                     n_fp_rs_rob_idx[alloc_fp_rs] = alloc_rob;
                     n_fp_rs_has_dest[alloc_fp_rs] = slot0_has_dest;
                     n_fp_rs_dest_phys[alloc_fp_rs] = alloc_phys;
-                    if (n_prf_ready[n_rat[d0_rs]]) begin
-                        n_fp_rs_s1_ready[alloc_fp_rs] = 1'b1;
-                        n_fp_rs_s1_value[alloc_fp_rs] = n_prf_value[n_rat[d0_rs]];
-                        n_fp_rs_s1_tag[alloc_fp_rs] = 6'd0;
-                    end
-                    else begin
-                        n_fp_rs_s1_ready[alloc_fp_rs] = 1'b0;
-                        n_fp_rs_s1_value[alloc_fp_rs] = 64'd0;
-                        n_fp_rs_s1_tag[alloc_fp_rs] = n_rat[d0_rs];
-                    end
-                    if (n_prf_ready[n_rat[d0_rt]]) begin
-                        n_fp_rs_s2_ready[alloc_fp_rs] = 1'b1;
-                        n_fp_rs_s2_value[alloc_fp_rs] = n_prf_value[n_rat[d0_rt]];
-                        n_fp_rs_s2_tag[alloc_fp_rs] = 6'd0;
-                    end
-                    else begin
-                        n_fp_rs_s2_ready[alloc_fp_rs] = 1'b0;
-                        n_fp_rs_s2_value[alloc_fp_rs] = 64'd0;
-                        n_fp_rs_s2_tag[alloc_fp_rs] = n_rat[d0_rt];
-                    end
+                    read_arch_source(d0_rs,
+                                     n_fp_rs_s1_ready[alloc_fp_rs],
+                                     n_fp_rs_s1_value[alloc_fp_rs],
+                                     n_fp_rs_s1_tag[alloc_fp_rs]);
+                    read_arch_source(d0_rt,
+                                     n_fp_rs_s2_ready[alloc_fp_rs],
+                                     n_fp_rs_s2_value[alloc_fp_rs],
+                                     n_fp_rs_s2_tag[alloc_fp_rs]);
                 end
 
                 if (slot0_needs_lsq) begin
@@ -1918,47 +2290,37 @@ always @(*) begin
                     n_lsq_addr_ready[alloc_lsq] = 1'b0;
                     n_lsq_addr[alloc_lsq] = 64'd0;
                     if (d0_opcode == OP_LOAD) begin
-                        if (n_prf_ready[n_rat[d0_rs]]) begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b1;
-                            n_lsq_base_value[alloc_lsq] = n_prf_value[n_rat[d0_rs]];
+                        read_arch_source(d0_rs,
+                                         n_lsq_base_ready[alloc_lsq],
+                                         n_lsq_base_value[alloc_lsq],
+                                         n_lsq_base_tag[alloc_lsq]);
+                        if (n_lsq_base_ready[alloc_lsq]) begin
                             n_lsq_addr_ready[alloc_lsq] = 1'b1;
-                            n_lsq_addr[alloc_lsq] = n_prf_value[n_rat[d0_rs]] + zext12(d0_L);
-                        end
-                        else begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b0;
-                            n_lsq_base_tag[alloc_lsq] = n_rat[d0_rs];
+                            n_lsq_addr[alloc_lsq] = n_lsq_base_value[alloc_lsq] + zext12(d0_L);
                         end
                     end
                     else if (d0_opcode == OP_STORE) begin
-                        if (n_prf_ready[n_rat[d0_rd]]) begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b1;
-                            n_lsq_base_value[alloc_lsq] = n_prf_value[n_rat[d0_rd]];
+                        read_arch_source(d0_rd,
+                                         n_lsq_base_ready[alloc_lsq],
+                                         n_lsq_base_value[alloc_lsq],
+                                         n_lsq_base_tag[alloc_lsq]);
+                        if (n_lsq_base_ready[alloc_lsq]) begin
                             n_lsq_addr_ready[alloc_lsq] = 1'b1;
-                            n_lsq_addr[alloc_lsq] = n_prf_value[n_rat[d0_rd]] + zext12(d0_L);
+                            n_lsq_addr[alloc_lsq] = n_lsq_base_value[alloc_lsq] + zext12(d0_L);
                         end
-                        else begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b0;
-                            n_lsq_base_tag[alloc_lsq] = n_rat[d0_rd];
-                        end
-                        if (n_prf_ready[n_rat[d0_rs]]) begin
-                            n_lsq_data_ready[alloc_lsq] = 1'b1;
-                            n_lsq_data_value[alloc_lsq] = n_prf_value[n_rat[d0_rs]];
-                        end
-                        else begin
-                            n_lsq_data_ready[alloc_lsq] = 1'b0;
-                            n_lsq_data_tag[alloc_lsq] = n_rat[d0_rs];
-                        end
+                        read_arch_source(d0_rs,
+                                         n_lsq_data_ready[alloc_lsq],
+                                         n_lsq_data_value[alloc_lsq],
+                                         n_lsq_data_tag[alloc_lsq]);
                     end
                     else if (d0_opcode == OP_CALL) begin
-                        if (n_prf_ready[n_rat[5'd31]]) begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b1;
-                            n_lsq_base_value[alloc_lsq] = n_prf_value[n_rat[5'd31]];
+                        read_arch_source(5'd31,
+                                         n_lsq_base_ready[alloc_lsq],
+                                         n_lsq_base_value[alloc_lsq],
+                                         n_lsq_base_tag[alloc_lsq]);
+                        if (n_lsq_base_ready[alloc_lsq]) begin
                             n_lsq_addr_ready[alloc_lsq] = 1'b1;
-                            n_lsq_addr[alloc_lsq] = n_prf_value[n_rat[5'd31]] - 64'd8;
-                        end
-                        else begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b0;
-                            n_lsq_base_tag[alloc_lsq] = n_rat[5'd31];
+                            n_lsq_addr[alloc_lsq] = n_lsq_base_value[alloc_lsq] - 64'd8;
                         end
                         n_lsq_data_ready[alloc_lsq] = 1'b1;
                         n_lsq_data_value[alloc_lsq] = n_fq_pc[0] + 64'd4;
@@ -1966,15 +2328,13 @@ always @(*) begin
                     else if (d0_opcode == OP_RET) begin
                         n_lsq_has_dest[alloc_lsq] = 1'b0;
                         n_lsq_dest_phys[alloc_lsq] = 6'd0;
-                        if (n_prf_ready[n_rat[5'd31]]) begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b1;
-                            n_lsq_base_value[alloc_lsq] = n_prf_value[n_rat[5'd31]];
+                        read_arch_source(5'd31,
+                                         n_lsq_base_ready[alloc_lsq],
+                                         n_lsq_base_value[alloc_lsq],
+                                         n_lsq_base_tag[alloc_lsq]);
+                        if (n_lsq_base_ready[alloc_lsq]) begin
                             n_lsq_addr_ready[alloc_lsq] = 1'b1;
-                            n_lsq_addr[alloc_lsq] = n_prf_value[n_rat[5'd31]] - 64'd8;
-                        end
-                        else begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b0;
-                            n_lsq_base_tag[alloc_lsq] = n_rat[5'd31];
+                            n_lsq_addr[alloc_lsq] = n_lsq_base_value[alloc_lsq] - 64'd8;
                         end
                     end
                 end
@@ -2104,100 +2464,60 @@ always @(*) begin
                     n_int_rs_s3_tag[alloc_int_rs] = 6'd0;
                     case (d1_opcode)
                         OP_NOT, OP_MOV_RR: begin
-                            if (n_prf_ready[n_rat[d1_rs]]) begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s1_value[alloc_int_rs] = n_prf_value[n_rat[d1_rs]];
-                            end
-                            else begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s1_tag[alloc_int_rs] = n_rat[d1_rs];
-                            end
+                            read_arch_source(d1_rs,
+                                             n_int_rs_s1_ready[alloc_int_rs],
+                                             n_int_rs_s1_value[alloc_int_rs],
+                                             n_int_rs_s1_tag[alloc_int_rs]);
                         end
                         OP_SHRI, OP_SHLI, OP_MOVI, OP_ADDI, OP_SUBI: begin
-                            if (n_prf_ready[n_rat[d1_rd]]) begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s1_value[alloc_int_rs] = n_prf_value[n_rat[d1_rd]];
-                            end
-                            else begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s1_tag[alloc_int_rs] = n_rat[d1_rd];
-                            end
+                            read_arch_source(d1_rd,
+                                             n_int_rs_s1_ready[alloc_int_rs],
+                                             n_int_rs_s1_value[alloc_int_rs],
+                                             n_int_rs_s1_tag[alloc_int_rs]);
                             n_int_rs_s2_ready[alloc_int_rs] = 1'b1;
                             n_int_rs_s2_value[alloc_int_rs] = zext12(d1_L);
                         end
                         OP_BR_ABS, OP_BR_RREG, OP_CALL: begin
-                            if (n_prf_ready[n_rat[d1_rd]]) begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s3_value[alloc_int_rs] = n_prf_value[n_rat[d1_rd]];
-                            end
-                            else begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s3_tag[alloc_int_rs] = n_rat[d1_rd];
-                            end
+                            read_arch_source(d1_rd,
+                                             n_int_rs_s3_ready[alloc_int_rs],
+                                             n_int_rs_s3_value[alloc_int_rs],
+                                             n_int_rs_s3_tag[alloc_int_rs]);
                         end
                         OP_BR_RLIT: begin
                         end
                         OP_BR_NZ: begin
-                            if (n_prf_ready[n_rat[d1_rs]]) begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s1_value[alloc_int_rs] = n_prf_value[n_rat[d1_rs]];
-                            end
-                            else begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s1_tag[alloc_int_rs] = n_rat[d1_rs];
-                            end
-                            if (n_prf_ready[n_rat[d1_rd]]) begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s3_value[alloc_int_rs] = n_prf_value[n_rat[d1_rd]];
-                            end
-                            else begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s3_tag[alloc_int_rs] = n_rat[d1_rd];
-                            end
+                            read_arch_source(d1_rs,
+                                             n_int_rs_s1_ready[alloc_int_rs],
+                                             n_int_rs_s1_value[alloc_int_rs],
+                                             n_int_rs_s1_tag[alloc_int_rs]);
+                            read_arch_source(d1_rd,
+                                             n_int_rs_s3_ready[alloc_int_rs],
+                                             n_int_rs_s3_value[alloc_int_rs],
+                                             n_int_rs_s3_tag[alloc_int_rs]);
                         end
                         OP_BR_GT: begin
-                            if (n_prf_ready[n_rat[d1_rs]]) begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s1_value[alloc_int_rs] = n_prf_value[n_rat[d1_rs]];
-                            end
-                            else begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s1_tag[alloc_int_rs] = n_rat[d1_rs];
-                            end
-                            if (n_prf_ready[n_rat[d1_rt]]) begin
-                                n_int_rs_s2_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s2_value[alloc_int_rs] = n_prf_value[n_rat[d1_rt]];
-                            end
-                            else begin
-                                n_int_rs_s2_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s2_tag[alloc_int_rs] = n_rat[d1_rt];
-                            end
-                            if (n_prf_ready[n_rat[d1_rd]]) begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s3_value[alloc_int_rs] = n_prf_value[n_rat[d1_rd]];
-                            end
-                            else begin
-                                n_int_rs_s3_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s3_tag[alloc_int_rs] = n_rat[d1_rd];
-                            end
+                            read_arch_source(d1_rs,
+                                             n_int_rs_s1_ready[alloc_int_rs],
+                                             n_int_rs_s1_value[alloc_int_rs],
+                                             n_int_rs_s1_tag[alloc_int_rs]);
+                            read_arch_source(d1_rt,
+                                             n_int_rs_s2_ready[alloc_int_rs],
+                                             n_int_rs_s2_value[alloc_int_rs],
+                                             n_int_rs_s2_tag[alloc_int_rs]);
+                            read_arch_source(d1_rd,
+                                             n_int_rs_s3_ready[alloc_int_rs],
+                                             n_int_rs_s3_value[alloc_int_rs],
+                                             n_int_rs_s3_tag[alloc_int_rs]);
                         end
                         default: begin
-                            if (n_prf_ready[n_rat[d1_rs]]) begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s1_value[alloc_int_rs] = n_prf_value[n_rat[d1_rs]];
-                            end
-                            else begin
-                                n_int_rs_s1_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s1_tag[alloc_int_rs] = n_rat[d1_rs];
-                            end
-                            if (n_prf_ready[n_rat[d1_rt]]) begin
-                                n_int_rs_s2_ready[alloc_int_rs] = 1'b1;
-                                n_int_rs_s2_value[alloc_int_rs] = n_prf_value[n_rat[d1_rt]];
-                            end
-                            else begin
-                                n_int_rs_s2_ready[alloc_int_rs] = 1'b0;
-                                n_int_rs_s2_tag[alloc_int_rs] = n_rat[d1_rt];
-                            end
+                            read_arch_source(d1_rs,
+                                             n_int_rs_s1_ready[alloc_int_rs],
+                                             n_int_rs_s1_value[alloc_int_rs],
+                                             n_int_rs_s1_tag[alloc_int_rs]);
+                            read_arch_source(d1_rt,
+                                             n_int_rs_s2_ready[alloc_int_rs],
+                                             n_int_rs_s2_value[alloc_int_rs],
+                                             n_int_rs_s2_tag[alloc_int_rs]);
                         end
                     endcase
                 end
@@ -2209,26 +2529,14 @@ always @(*) begin
                     n_fp_rs_rob_idx[alloc_fp_rs] = alloc_rob;
                     n_fp_rs_has_dest[alloc_fp_rs] = slot1_has_dest;
                     n_fp_rs_dest_phys[alloc_fp_rs] = alloc_phys;
-                    if (n_prf_ready[n_rat[d1_rs]]) begin
-                        n_fp_rs_s1_ready[alloc_fp_rs] = 1'b1;
-                        n_fp_rs_s1_value[alloc_fp_rs] = n_prf_value[n_rat[d1_rs]];
-                        n_fp_rs_s1_tag[alloc_fp_rs] = 6'd0;
-                    end
-                    else begin
-                        n_fp_rs_s1_ready[alloc_fp_rs] = 1'b0;
-                        n_fp_rs_s1_value[alloc_fp_rs] = 64'd0;
-                        n_fp_rs_s1_tag[alloc_fp_rs] = n_rat[d1_rs];
-                    end
-                    if (n_prf_ready[n_rat[d1_rt]]) begin
-                        n_fp_rs_s2_ready[alloc_fp_rs] = 1'b1;
-                        n_fp_rs_s2_value[alloc_fp_rs] = n_prf_value[n_rat[d1_rt]];
-                        n_fp_rs_s2_tag[alloc_fp_rs] = 6'd0;
-                    end
-                    else begin
-                        n_fp_rs_s2_ready[alloc_fp_rs] = 1'b0;
-                        n_fp_rs_s2_value[alloc_fp_rs] = 64'd0;
-                        n_fp_rs_s2_tag[alloc_fp_rs] = n_rat[d1_rt];
-                    end
+                    read_arch_source(d1_rs,
+                                     n_fp_rs_s1_ready[alloc_fp_rs],
+                                     n_fp_rs_s1_value[alloc_fp_rs],
+                                     n_fp_rs_s1_tag[alloc_fp_rs]);
+                    read_arch_source(d1_rt,
+                                     n_fp_rs_s2_ready[alloc_fp_rs],
+                                     n_fp_rs_s2_value[alloc_fp_rs],
+                                     n_fp_rs_s2_tag[alloc_fp_rs]);
                 end
 
                 if (slot1_needs_lsq) begin
@@ -2248,47 +2556,37 @@ always @(*) begin
                     n_lsq_addr_ready[alloc_lsq] = 1'b0;
                     n_lsq_addr[alloc_lsq] = 64'd0;
                     if (d1_opcode == OP_LOAD) begin
-                        if (n_prf_ready[n_rat[d1_rs]]) begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b1;
-                            n_lsq_base_value[alloc_lsq] = n_prf_value[n_rat[d1_rs]];
+                        read_arch_source(d1_rs,
+                                         n_lsq_base_ready[alloc_lsq],
+                                         n_lsq_base_value[alloc_lsq],
+                                         n_lsq_base_tag[alloc_lsq]);
+                        if (n_lsq_base_ready[alloc_lsq]) begin
                             n_lsq_addr_ready[alloc_lsq] = 1'b1;
-                            n_lsq_addr[alloc_lsq] = n_prf_value[n_rat[d1_rs]] + zext12(d1_L);
-                        end
-                        else begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b0;
-                            n_lsq_base_tag[alloc_lsq] = n_rat[d1_rs];
+                            n_lsq_addr[alloc_lsq] = n_lsq_base_value[alloc_lsq] + zext12(d1_L);
                         end
                     end
                     else if (d1_opcode == OP_STORE) begin
-                        if (n_prf_ready[n_rat[d1_rd]]) begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b1;
-                            n_lsq_base_value[alloc_lsq] = n_prf_value[n_rat[d1_rd]];
+                        read_arch_source(d1_rd,
+                                         n_lsq_base_ready[alloc_lsq],
+                                         n_lsq_base_value[alloc_lsq],
+                                         n_lsq_base_tag[alloc_lsq]);
+                        if (n_lsq_base_ready[alloc_lsq]) begin
                             n_lsq_addr_ready[alloc_lsq] = 1'b1;
-                            n_lsq_addr[alloc_lsq] = n_prf_value[n_rat[d1_rd]] + zext12(d1_L);
+                            n_lsq_addr[alloc_lsq] = n_lsq_base_value[alloc_lsq] + zext12(d1_L);
                         end
-                        else begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b0;
-                            n_lsq_base_tag[alloc_lsq] = n_rat[d1_rd];
-                        end
-                        if (n_prf_ready[n_rat[d1_rs]]) begin
-                            n_lsq_data_ready[alloc_lsq] = 1'b1;
-                            n_lsq_data_value[alloc_lsq] = n_prf_value[n_rat[d1_rs]];
-                        end
-                        else begin
-                            n_lsq_data_ready[alloc_lsq] = 1'b0;
-                            n_lsq_data_tag[alloc_lsq] = n_rat[d1_rs];
-                        end
+                        read_arch_source(d1_rs,
+                                         n_lsq_data_ready[alloc_lsq],
+                                         n_lsq_data_value[alloc_lsq],
+                                         n_lsq_data_tag[alloc_lsq]);
                     end
                     else if (d1_opcode == OP_CALL) begin
-                        if (n_prf_ready[n_rat[5'd31]]) begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b1;
-                            n_lsq_base_value[alloc_lsq] = n_prf_value[n_rat[5'd31]];
+                        read_arch_source(5'd31,
+                                         n_lsq_base_ready[alloc_lsq],
+                                         n_lsq_base_value[alloc_lsq],
+                                         n_lsq_base_tag[alloc_lsq]);
+                        if (n_lsq_base_ready[alloc_lsq]) begin
                             n_lsq_addr_ready[alloc_lsq] = 1'b1;
-                            n_lsq_addr[alloc_lsq] = n_prf_value[n_rat[5'd31]] - 64'd8;
-                        end
-                        else begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b0;
-                            n_lsq_base_tag[alloc_lsq] = n_rat[5'd31];
+                            n_lsq_addr[alloc_lsq] = n_lsq_base_value[alloc_lsq] - 64'd8;
                         end
                         n_lsq_data_ready[alloc_lsq] = 1'b1;
                         n_lsq_data_value[alloc_lsq] = n_fq_pc[1] + 64'd4;
@@ -2296,15 +2594,13 @@ always @(*) begin
                     else if (d1_opcode == OP_RET) begin
                         n_lsq_has_dest[alloc_lsq] = 1'b0;
                         n_lsq_dest_phys[alloc_lsq] = 6'd0;
-                        if (n_prf_ready[n_rat[5'd31]]) begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b1;
-                            n_lsq_base_value[alloc_lsq] = n_prf_value[n_rat[5'd31]];
+                        read_arch_source(5'd31,
+                                         n_lsq_base_ready[alloc_lsq],
+                                         n_lsq_base_value[alloc_lsq],
+                                         n_lsq_base_tag[alloc_lsq]);
+                        if (n_lsq_base_ready[alloc_lsq]) begin
                             n_lsq_addr_ready[alloc_lsq] = 1'b1;
-                            n_lsq_addr[alloc_lsq] = n_prf_value[n_rat[5'd31]] - 64'd8;
-                        end
-                        else begin
-                            n_lsq_base_ready[alloc_lsq] = 1'b0;
-                            n_lsq_base_tag[alloc_lsq] = n_rat[5'd31];
+                            n_lsq_addr[alloc_lsq] = n_lsq_base_value[alloc_lsq] - 64'd8;
                         end
                     end
                 end
