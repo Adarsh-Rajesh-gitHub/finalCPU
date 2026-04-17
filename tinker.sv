@@ -786,6 +786,14 @@ function [63:0] zext12;
     end
 endfunction
 
+function [63:0] zext17;
+    input [4:0] imm_hi;
+    input [11:0] imm_lo;
+    begin
+        zext17 = {47'b0, imm_hi, imm_lo};
+    end
+endfunction
+
 function [63:0] sext12;
     input [11:0] imm;
     begin
@@ -2312,6 +2320,7 @@ always @(*) begin
             reg slot0_needs_int_rs;
             reg slot0_needs_fp_rs;
             reg slot0_needs_lsq;
+            reg slot0_is_label_load;
             reg slot0_has_dest;
             reg slot0_can_dispatch;
             reg slot1_is_load;
@@ -2321,6 +2330,7 @@ always @(*) begin
             reg slot1_needs_int_rs;
             reg slot1_needs_fp_rs;
             reg slot1_needs_lsq;
+            reg slot1_is_label_load;
             reg slot1_has_dest;
             reg slot1_can_dispatch;
 
@@ -2567,7 +2577,8 @@ always @(*) begin
             slot0_is_nop = !(d0_use_alu || d0_use_fpu || d0_br_abs || d0_br_rel_reg || d0_br_rel_lit || d0_br_nz || d0_br_gt || d0_call_inst || d0_return_inst || slot0_is_load || slot0_is_store || slot0_is_halt);
             slot0_needs_int_rs = d0_use_alu || d0_br_abs || d0_br_rel_reg || d0_br_rel_lit || d0_br_nz || d0_br_gt || d0_call_inst;
             slot0_needs_fp_rs = d0_use_fpu;
-            slot0_needs_lsq = slot0_is_load || slot0_is_store || d0_call_inst || d0_return_inst;
+            slot0_is_label_load = slot0_is_load && (d0_rs == 5'd0) && (d0_rt != 5'd0);
+            slot0_needs_lsq = (slot0_is_load && !slot0_is_label_load) || slot0_is_store || d0_call_inst || d0_return_inst;
             slot0_has_dest = d0_reg_write;
             slot0_can_dispatch = 1'b0;
 
@@ -2630,7 +2641,7 @@ always @(*) begin
                     old_phys = n_rat[d0_rd];
 
                 n_rob_valid[alloc_rob] = 1'b1;
-                if (slot0_is_store || slot0_is_nop || slot0_is_halt)
+                if (slot0_is_store || slot0_is_nop || slot0_is_halt || slot0_is_label_load)
                     n_rob_done[alloc_rob] = 1'b1;
                 else
                     n_rob_done[alloc_rob] = 1'b0;
@@ -2816,8 +2827,14 @@ always @(*) begin
 
                 if (slot0_has_dest) begin
                     n_phys_free[alloc_phys] = 1'b0;
-                    n_prf_ready[alloc_phys] = 1'b0;
-                    n_prf_value[alloc_phys] = 64'd0;
+                    if (slot0_is_label_load) begin
+                        n_prf_ready[alloc_phys] = 1'b1;
+                        n_prf_value[alloc_phys] = zext17(d0_rt, d0_L);
+                    end
+                    else begin
+                        n_prf_ready[alloc_phys] = 1'b0;
+                        n_prf_value[alloc_phys] = 64'd0;
+                    end
                     n_rat[d0_rd] = alloc_phys;
                 end
 
@@ -2833,7 +2850,8 @@ always @(*) begin
             slot1_is_nop = !(d1_use_alu || d1_use_fpu || d1_br_abs || d1_br_rel_reg || d1_br_rel_lit || d1_br_nz || d1_br_gt || d1_call_inst || d1_return_inst || slot1_is_load || slot1_is_store || slot1_is_halt);
             slot1_needs_int_rs = d1_use_alu || d1_br_abs || d1_br_rel_reg || d1_br_rel_lit || d1_br_nz || d1_br_gt || d1_call_inst;
             slot1_needs_fp_rs = d1_use_fpu;
-            slot1_needs_lsq = slot1_is_load || slot1_is_store || d1_call_inst || d1_return_inst;
+            slot1_is_label_load = slot1_is_load && (d1_rs == 5'd0) && (d1_rt != 5'd0);
+            slot1_needs_lsq = (slot1_is_load && !slot1_is_label_load) || slot1_is_store || d1_call_inst || d1_return_inst;
             slot1_has_dest = d1_reg_write;
             slot1_can_dispatch = 1'b0;
 
@@ -2896,7 +2914,7 @@ always @(*) begin
                     old_phys = n_rat[d1_rd];
 
                 n_rob_valid[alloc_rob] = 1'b1;
-                if (slot1_is_store || slot1_is_nop || slot1_is_halt)
+                if (slot1_is_store || slot1_is_nop || slot1_is_halt || slot1_is_label_load)
                     n_rob_done[alloc_rob] = 1'b1;
                 else
                     n_rob_done[alloc_rob] = 1'b0;
@@ -3082,8 +3100,14 @@ always @(*) begin
 
                 if (slot1_has_dest) begin
                     n_phys_free[alloc_phys] = 1'b0;
-                    n_prf_ready[alloc_phys] = 1'b0;
-                    n_prf_value[alloc_phys] = 64'd0;
+                    if (slot1_is_label_load) begin
+                        n_prf_ready[alloc_phys] = 1'b1;
+                        n_prf_value[alloc_phys] = zext17(d1_rt, d1_L);
+                    end
+                    else begin
+                        n_prf_ready[alloc_phys] = 1'b0;
+                        n_prf_value[alloc_phys] = 64'd0;
+                    end
                     n_rat[d1_rd] = alloc_phys;
                 end
 
