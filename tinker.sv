@@ -1712,7 +1712,7 @@ always @(*) begin
         apply_brcand[i] = 1'b0;
     end
 
-    if (!hlt) begin
+    if (!reset && !hlt) begin
         // ------------------------------------------------------------
         // 2) collect execution completions into CDB / branch result slots
         // ------------------------------------------------------------
