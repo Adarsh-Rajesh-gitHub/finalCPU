@@ -786,18 +786,34 @@ function [63:0] zext12;
     end
 endfunction
 
-function [63:0] zext17;
-    input [4:0] imm_hi;
-    input [11:0] imm_lo;
-    begin
-        zext17 = {47'b0, imm_hi, imm_lo};
-    end
-endfunction
-
 function [63:0] sext12;
     input [11:0] imm;
     begin
         sext12 = {{52{imm[11]}}, imm};
+    end
+endfunction
+
+function [31:0] read_code_word;
+    input [63:0] addr;
+    begin
+        if ((addr + 64'd3) < MEM_SIZE)
+            read_code_word = {memory.bytes[addr + 64'd3], memory.bytes[addr + 64'd2],
+                              memory.bytes[addr + 64'd1], memory.bytes[addr]};
+        else
+            read_code_word = 32'd0;
+    end
+endfunction
+
+function [63:0] read_data_qword;
+    input [63:0] addr;
+    begin
+        if ((addr + 64'd7) < MEM_SIZE)
+            read_data_qword = {memory.bytes[addr + 64'd7], memory.bytes[addr + 64'd6],
+                               memory.bytes[addr + 64'd5], memory.bytes[addr + 64'd4],
+                               memory.bytes[addr + 64'd3], memory.bytes[addr + 64'd2],
+                               memory.bytes[addr + 64'd1], memory.bytes[addr]};
+        else
+            read_data_qword = 64'd0;
     end
 endfunction
 
@@ -1426,6 +1442,8 @@ reg [4:0] fetch1_opcode;
 reg [11:0] fetch1_L;
 reg fetch1_pred_taken;
 reg [63:0] fetch1_pred_target;
+reg [63:0] fetch1_pc_val;
+reg [31:0] fetch1_inst_word;
 
 // main next-state / control logic
 always @(*) begin
@@ -2320,7 +2338,6 @@ always @(*) begin
             reg slot0_needs_int_rs;
             reg slot0_needs_fp_rs;
             reg slot0_needs_lsq;
-            reg slot0_is_label_load;
             reg slot0_has_dest;
             reg slot0_can_dispatch;
             reg slot1_is_load;
@@ -2330,9 +2347,9 @@ always @(*) begin
             reg slot1_needs_int_rs;
             reg slot1_needs_fp_rs;
             reg slot1_needs_lsq;
-            reg slot1_is_label_load;
             reg slot1_has_dest;
             reg slot1_can_dispatch;
+            reg slot0_hold_slot1;
 
             // ------------------------------------------------------------
             // 3) issue ready integer / FP ops into the free execution slots
@@ -2553,7 +2570,7 @@ always @(*) begin
                 if (ld_issue_forward || !mem_write_en) begin
                     if (!ld_issue_forward) begin
                         mem_data_addr = n_lsq_addr[ld_issue_lsq];
-                        ld_issue_value = memory_data_read;
+                        ld_issue_value = read_data_qword(n_lsq_addr[ld_issue_lsq]);
                     end
                     n_ld_valid = 1'b1;
                     n_ld_opcode = n_lsq_opcode[ld_issue_lsq];
@@ -2577,9 +2594,9 @@ always @(*) begin
             slot0_is_nop = !(d0_use_alu || d0_use_fpu || d0_br_abs || d0_br_rel_reg || d0_br_rel_lit || d0_br_nz || d0_br_gt || d0_call_inst || d0_return_inst || slot0_is_load || slot0_is_store || slot0_is_halt);
             slot0_needs_int_rs = d0_use_alu || d0_br_abs || d0_br_rel_reg || d0_br_rel_lit || d0_br_nz || d0_br_gt || d0_call_inst;
             slot0_needs_fp_rs = d0_use_fpu;
-            slot0_is_label_load = slot0_is_load && (d0_rs == 5'd0) && (d0_rt != 5'd0);
-            slot0_needs_lsq = (slot0_is_load && !slot0_is_label_load) || slot0_is_store || d0_call_inst || d0_return_inst;
+            slot0_needs_lsq = slot0_is_load || slot0_is_store || d0_call_inst || d0_return_inst;
             slot0_has_dest = d0_reg_write;
+            slot0_hold_slot1 = slot0_valid_local && is_cond_branch(d0_opcode) && n_fq_pred_taken[0];
             slot0_can_dispatch = 1'b0;
 
             alloc_phys = 6'd0;
@@ -2641,7 +2658,7 @@ always @(*) begin
                     old_phys = n_rat[d0_rd];
 
                 n_rob_valid[alloc_rob] = 1'b1;
-                if (slot0_is_store || slot0_is_nop || slot0_is_halt || slot0_is_label_load)
+                if (slot0_is_store || slot0_is_nop || slot0_is_halt)
                     n_rob_done[alloc_rob] = 1'b1;
                 else
                     n_rob_done[alloc_rob] = 1'b0;
@@ -2827,14 +2844,8 @@ always @(*) begin
 
                 if (slot0_has_dest) begin
                     n_phys_free[alloc_phys] = 1'b0;
-                    if (slot0_is_label_load) begin
-                        n_prf_ready[alloc_phys] = 1'b1;
-                        n_prf_value[alloc_phys] = zext17(d0_rt, d0_L);
-                    end
-                    else begin
-                        n_prf_ready[alloc_phys] = 1'b0;
-                        n_prf_value[alloc_phys] = 64'd0;
-                    end
+                    n_prf_ready[alloc_phys] = 1'b0;
+                    n_prf_value[alloc_phys] = 64'd0;
                     n_rat[d0_rd] = alloc_phys;
                 end
 
@@ -2843,15 +2854,14 @@ always @(*) begin
                 disp_count = 3'd1;
             end
 
-            slot1_valid_local = (slot0_can_dispatch && n_fq_valid[1]);
+            slot1_valid_local = (slot0_can_dispatch && n_fq_valid[1] && !slot0_hold_slot1);
             slot1_is_load = (d1_opcode == OP_LOAD);
             slot1_is_store = (d1_opcode == OP_STORE);
             slot1_is_halt = (d1_opcode == OP_HALT) && (d1_L == 12'h000);
             slot1_is_nop = !(d1_use_alu || d1_use_fpu || d1_br_abs || d1_br_rel_reg || d1_br_rel_lit || d1_br_nz || d1_br_gt || d1_call_inst || d1_return_inst || slot1_is_load || slot1_is_store || slot1_is_halt);
             slot1_needs_int_rs = d1_use_alu || d1_br_abs || d1_br_rel_reg || d1_br_rel_lit || d1_br_nz || d1_br_gt || d1_call_inst;
             slot1_needs_fp_rs = d1_use_fpu;
-            slot1_is_label_load = slot1_is_load && (d1_rs == 5'd0) && (d1_rt != 5'd0);
-            slot1_needs_lsq = (slot1_is_load && !slot1_is_label_load) || slot1_is_store || d1_call_inst || d1_return_inst;
+            slot1_needs_lsq = slot1_is_load || slot1_is_store || d1_call_inst || d1_return_inst;
             slot1_has_dest = d1_reg_write;
             slot1_can_dispatch = 1'b0;
 
@@ -2914,7 +2924,7 @@ always @(*) begin
                     old_phys = n_rat[d1_rd];
 
                 n_rob_valid[alloc_rob] = 1'b1;
-                if (slot1_is_store || slot1_is_nop || slot1_is_halt || slot1_is_label_load)
+                if (slot1_is_store || slot1_is_nop || slot1_is_halt)
                     n_rob_done[alloc_rob] = 1'b1;
                 else
                     n_rob_done[alloc_rob] = 1'b0;
@@ -3100,14 +3110,8 @@ always @(*) begin
 
                 if (slot1_has_dest) begin
                     n_phys_free[alloc_phys] = 1'b0;
-                    if (slot1_is_label_load) begin
-                        n_prf_ready[alloc_phys] = 1'b1;
-                        n_prf_value[alloc_phys] = zext17(d1_rt, d1_L);
-                    end
-                    else begin
-                        n_prf_ready[alloc_phys] = 1'b0;
-                        n_prf_value[alloc_phys] = 64'd0;
-                    end
+                    n_prf_ready[alloc_phys] = 1'b0;
+                    n_prf_value[alloc_phys] = 64'd0;
                     n_rat[d1_rd] = alloc_phys;
                 end
 
@@ -3189,27 +3193,33 @@ always @(*) begin
                 else
                     n_fetch_pc = fetch_pc + 64'd4;
 
-                if (!fetch0_pred_taken && (free_slot_count > 1) && !mem_write_en && !(ld_issue_valid && !ld_issue_forward)) begin
-                    fetch1_opcode = memory_data_read[31:27];
-                    fetch1_L = memory_data_read[11:0];
+                if ((free_slot_count > 1) &&
+                    (!fetch0_pred_taken || (fetch0_pred_target > fetch_pc))) begin
+                    if (fetch0_pred_taken)
+                        fetch1_pc_val = fetch0_pred_target;
+                    else
+                        fetch1_pc_val = fetch_pc + 64'd4;
+                    fetch1_inst_word = read_code_word(fetch1_pc_val);
+                    fetch1_opcode = fetch1_inst_word[31:27];
+                    fetch1_L = fetch1_inst_word[11:0];
                     fetch1_pred_taken = 1'b0;
-                    fetch1_pred_target = fetch_pc + 64'd8;
+                    fetch1_pred_target = fetch1_pc_val + 64'd4;
                     case (fetch1_opcode)
                         OP_BR_RLIT: begin
                             fetch1_pred_taken = 1'b1;
-                            fetch1_pred_target = (fetch_pc + 64'd4) + sext12(fetch1_L);
+                            fetch1_pred_target = fetch1_pc_val + sext12(fetch1_L);
                         end
                         OP_BR_ABS, OP_BR_RREG, OP_CALL, OP_RET: begin
-                            if (btb_valid[btb_index(fetch_pc + 64'd4)] && (btb_tag[btb_index(fetch_pc + 64'd4)] == (fetch_pc + 64'd4))) begin
+                            if (btb_valid[btb_index(fetch1_pc_val)] && (btb_tag[btb_index(fetch1_pc_val)] == fetch1_pc_val)) begin
                                 fetch1_pred_taken = 1'b1;
-                                fetch1_pred_target = btb_target[btb_index(fetch_pc + 64'd4)];
+                                fetch1_pred_target = btb_target[btb_index(fetch1_pc_val)];
                             end
                         end
                         OP_BR_NZ, OP_BR_GT: begin
-                            if (btb_valid[btb_index(fetch_pc + 64'd4)] && (btb_tag[btb_index(fetch_pc + 64'd4)] == (fetch_pc + 64'd4)) &&
-                                (bht[btb_index(fetch_pc + 64'd4)][1] || (btb_target[btb_index(fetch_pc + 64'd4)] < (fetch_pc + 64'd4)))) begin
+                            if (btb_valid[btb_index(fetch1_pc_val)] && (btb_tag[btb_index(fetch1_pc_val)] == fetch1_pc_val) &&
+                                (bht[btb_index(fetch1_pc_val)][1] || (btb_target[btb_index(fetch1_pc_val)] < fetch1_pc_val))) begin
                                 fetch1_pred_taken = 1'b1;
-                                fetch1_pred_target = btb_target[btb_index(fetch_pc + 64'd4)];
+                                fetch1_pred_target = btb_target[btb_index(fetch1_pc_val)];
                             end
                         end
                         default: begin
@@ -3219,8 +3229,8 @@ always @(*) begin
                     for (i = 0; i < FQ_SIZE; i = i + 1) begin
                         if (!slot_found && !n_fq_valid[i]) begin
                             n_fq_valid[i] = 1'b1;
-                            n_fq_inst[i] = memory_data_read[31:0];
-                            n_fq_pc[i] = fetch_pc + 64'd4;
+                            n_fq_inst[i] = fetch1_inst_word;
+                            n_fq_pc[i] = fetch1_pc_val;
                             n_fq_pred_taken[i] = fetch1_pred_taken;
                             n_fq_pred_target[i] = fetch1_pred_target;
                             slot_found = 1'b1;
